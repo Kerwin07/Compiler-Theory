@@ -19,8 +19,9 @@ notepad Lexer\source_char.txt
 x = 5;
 y = 10;
 
-// 表达式（运算符优先级：== < + - < * /）
+// 表达式（运算符优先级：== < + - < * / < ^）
 z = x + y * 2;
+p = 2 ^ 3;       // 指数：2 的 3 次方 = 8
 
 // 条件分支（可嵌套，else 绑定最近 if）
 if (x == 5) {
@@ -108,6 +109,7 @@ ID      [A-Za-z_][A-Za-z0-9_]*  # 标识符
 INT     [0-9][0-9]*      # 整数
 PLUS    \+               # +
 EQ      ==               # ==
+POW     \^               # ^  指数
 ...
 ```
 
@@ -171,17 +173,19 @@ Stmt     → ID StmtTail SEMI
          | SEMI
 Expr     → Comp Expr'          # == 最低优先级
 Comp     → Term Comp'          # + -
-Term     → Factor Term'        # * /
+Term     → Power Term'         # * /
+Power    → Factor Power'       # ^ 最高优先级
+Power'   → POW Factor Power' | eps
 Factor   → LPAREN Expr RPAREN | ID | INT
 ```
 
-通过为每种优先级引入独立的非终结符（Expr/Comp/Term/Factor），在文法层面编码了运算符优先级。
+通过为每种优先级引入独立的非终结符（Expr/Comp/Term/Power/Factor），在文法层面编码了运算符优先级。
 
 ---
 
 ## 三、语义分析 (Semantic/)
 
-**任务**：检查程序的语义合法性，构建符号表。
+**任务**：检查程序的语义合法性，构建符号表，进行类型检查和表达式求值。
 
 ### 实现
 
@@ -195,28 +199,49 @@ Factor   → LPAREN Expr RPAREN | ID | INT
 
 | 语句类型 | 处理方式 |
 |----------|----------|
-| `ID = Expr` | 记录变量定义/重新赋值，检查 RHS 中引用的变量是否已定义 |
-| `ID ...` (表达式语句) | 收集变量引用，检查是否已定义 |
-| `IF (cond) ...` | 仅检查条件表达式中的变量引用 |
-| `WHILE (cond) ...` | 仅检查条件表达式中的变量引用 |
-| `RETURN expr` | 检查返回值表达式中的变量引用 |
+| `ID = Expr` | 求值 Expr → 记录变量类型+值，检查类型是否与之前一致 |
+| `ID ...` (表达式语句) | 收集变量引用，检查是否已定义，同时求值表达式 |
+| `IF (cond) ...` | 求值条件表达式，检查条件中引用的变量，报告条件类型 |
+| `WHILE (cond) ...` | 求值条件表达式，检查条件中引用的变量 |
+| `RETURN expr` | 求值返回值表达式，记录返回类型和值 |
 
-最终检查：已定义但从未被使用的变量。
+### 类型系统
+
+| 类型 | 来源 | 说明 |
+|------|------|------|
+| `int` | INT 字面量、算术运算结果 | 默认整数类型 |
+| `float` | 除法结果 | 自动推断 |
+| `bool` | `==` 比较结果 | 自动推断 |
+| `error` | 未定义/类型错误 | 错误标记 |
+
+**类型检查**：变量重赋值时若类型不匹配（如 int → bool），输出 warning。
+
+### 表达式求值（计算器）
+
+递归遍历 AST 的 Expr/Comp/Term/Power/Factor 子树，按语法优先级求值：
+
+| 运算符 | 优先级 | 示例 |
+|--------|--------|------|
+| `^` | 最高 | `2 ^ 3 = 8` |
+| `*` `/` | 高 | `10 * 2 = 20` |
+| `+` `-` | 中 | `5 + 3 = 8` |
+| `==` | 低 | `5 == 5 → 1 (true)` |
 
 ### 输出示例
 
 ```
--- Info (5) --
-  defined variable 'x' at Stmt#1
-  defined variable 'y' at Stmt#2
-  defined variable 'z' at Stmt#5
-  reassigned variable 'z' at Stmt#6
-  reassigned variable 'x' at Stmt#9
+-- Info (8) --
+  defined variable 'x' (type=int, value=5) at Stmt#1
+  defined variable 'y' (type=int, value=10) at Stmt#2
+  defined variable 'z' (type=int, value=8) at Stmt#3     ← 2^3
+  defined variable 'w' (type=int, value=85) at Stmt#4    ← x + y*z
+  RETURN value = 85 [type=int] at Stmt#12
 
 -- Symbol Table --
-  x  defined=true  used=true   definedAt=#1  usedAt=#9
-  y  defined=true  used=true   definedAt=#2  usedAt=#5
-  z  defined=true  used=true   definedAt=#5  usedAt=#10
+  w  type=int  value=85  defined=Y  used=Y  definedAt=#4  usedAt=#12
+  x  type=int  value=6   defined=Y  used=Y  definedAt=#1  usedAt=#11
+  y  type=int  value=10  defined=Y  used=Y  definedAt=#2  usedAt=#7
+  z  type=int  value=8   defined=Y  used=Y  definedAt=#3  usedAt=#4
 ```
 
 ---
@@ -234,7 +259,8 @@ Factor   → LPAREN Expr RPAREN | ID | INT
 | 函数 | 作用 |
 |------|------|
 | `evalFactor` | 处理 `ID`(查变量表) / `INT`(转整数) / `(Expr)` |
-| `evalTerm` | 处理 `* /` 链：左边值 ×/÷ 右边 Factor，循环处理 Term' |
+| `evalPower` | 处理 `^` 指数链：左边值 ^ 右边 Factor |
+| `evalTerm` | 处理 `* /` 链：左边值 ×/÷ 右边 Power，循环处理 Term' |
 | `evalComp` | 处理 `+ -` 链：左边值 +/- 右边 Term，循环处理 Comp' |
 | `evalExpr` | 处理 `==` 链：左边值 == 右边 Comp，返回 1/0，循环处理 Expr' |
 | `execStmt` | 按语句类型分发：赋值/if/while/return/块 |

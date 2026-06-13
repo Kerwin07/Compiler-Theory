@@ -19,8 +19,8 @@
   - 格式：每行一个产生式：
     - `A -> B c D | eps`
   - 约定：
-    - 非终结符：以大写字母开头的单词（如 `E`, `Stmt`, `Expr`）
-    - 终结符：其它符号（如 `ID`, `INT`, `+`, `(`, `)`）
+    - 非终结符：以大写字母开头的单词（如 `E`, `Stmt`, `Expr`, `Power`）
+    - 终结符：其它符号（如 `ID`, `INT`, `+`, `(`, `)`, `^`）
     - 空串：`eps`
     - 输入结束符：`$`（程序自动加入）
 
@@ -32,6 +32,26 @@
 - 输入2：分析表：`ll_table.txt`
 - 输出：`parse_steps.txt`
   - 记录推导/匹配过程（栈、剩余输入、动作）。
+
+## 文法则
+
+```
+S        → StmtList
+Stmt     → ID StmtTail SEMI
+         | IF LPAREN Expr RPAREN Stmt ElseOpt
+         | WHILE LPAREN Expr RPAREN Stmt
+         | LBRACE StmtList RBRACE
+         | RETURN Expr SEMI
+         | SEMI
+Expr     → Comp Expr'          # == 最低
+Comp     → Term Comp'          # + -
+Term     → Power Term'         # * /
+Power    → Factor Power'       # ^ 最高
+Power'   → POW Factor Power' | eps
+Factor   → LPAREN Expr RPAREN | ID | INT
+```
+
+运算符优先级：`== < + - < * / < ^`
 
 ## 编译
 
