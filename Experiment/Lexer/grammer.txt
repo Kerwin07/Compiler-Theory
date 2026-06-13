@@ -1,0 +1,33 @@
+# 规则优先级：越靠前优先级越高（用于关键字覆盖 ID）
+# 正则支持：() | *  连接(隐式)  转义(\n \t \r \\ \+ \* \( \) \[ \] ...)  字符类([a-z]、[0-9]、[^\n])  预定义类(\d \w \s)
+
+# --- skip ---
+WS      [ \t\n]+ 
+# COMMENT /\*[^\0]*\*/
+
+# --- keywords ---
+IF      if
+ELSE    else
+WHILE   while
+INT_KW  int
+RETURN  return
+
+# --- identifiers & numbers ---
+ID      [A-Za-z_][A-Za-z0-9_]*
+INT     [0-9][0-9]*
+
+# --- operators ---
+EQ      ==
+ASSIGN  =
+PLUS    \+
+MINUS   -
+MUL     \*
+DIV     /
+
+# --- delimiters ---
+LPAREN  \(
+RPAREN  \)
+LBRACE  \{
+RBRACE  \}
+SEMI    ;
+COMMA   ,

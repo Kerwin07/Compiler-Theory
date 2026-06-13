@@ -1,0 +1,11 @@
+=== Execution Trace ===
+  x = 5
+  y = 10
+  IF (cond=1)
+  z = 25
+  z = 26
+  WHILE (cond=1)
+  x = 6
+  WHILE (cond=0)
+  RETURN 26
+Program returned: 26

@@ -1,0 +1,52 @@
+# Compiled executables
+*.exe
+*.out
+
+# Object files
+*.o
+*.obj
+
+# Libraries
+*.lib
+*.dll
+*.so
+*.dylib
+
+# Debug files
+*.ilk
+*.pdb
+
+# Compiled Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# Build outputs / generated files
+mindfa
+dfa
+
+# Binary files without extension
+Experiment/Lexer/mindfa
+Experiment/Lexer/dfa
+
+# Generated report/log files (keep source ones)
+# Uncomment if needed:
+# *.txt
+# *.json

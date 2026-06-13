@@ -1,0 +1,14 @@
+SEMANTIC ANALYSIS REPORT
+========================
+
+[INFO]    defined variable 'x' at Stmt#1
+[INFO]    defined variable 'y' at Stmt#2
+[INFO]    defined variable 'z' at Stmt#5
+[INFO]    reassigned variable 'z' at Stmt#6
+[INFO]    reassigned variable 'x' at Stmt#9
+
+SYMBOL TABLE
+============
+x  defined=true   used=true   definedAt=#1  usedAt=#9
+y  defined=true   used=true   definedAt=#2  usedAt=#5
+z  defined=true   used=true   definedAt=#5  usedAt=#10

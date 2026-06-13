@@ -1,0 +1,22 @@
+# LL(1) 文法：支持赋值 / 表达式 / 控制流(if-else/while) / 块 / return
+# 终结符名须与词法分析器输出的 token type 一致
+# 运算符优先级：== (最低) < + - < * / (最高)
+# 非终结符：S StmtList Stmt ElseOpt StmtTail Expr Expr' Comp Comp' Term Term' Factor
+
+S -> StmtList
+
+StmtList -> Stmt StmtList | eps
+
+Stmt -> ID StmtTail SEMI | IF LPAREN Expr RPAREN Stmt ElseOpt | WHILE LPAREN Expr RPAREN Stmt | LBRACE StmtList RBRACE | RETURN Expr SEMI | SEMI
+
+ElseOpt -> ELSE Stmt | eps
+
+StmtTail -> ASSIGN Expr | Term' Comp' Expr'
+
+Expr   -> Comp Expr'
+Expr'  -> EQ Comp Expr' | eps
+Comp   -> Term Comp'
+Comp'  -> PLUS Term Comp' | MINUS Term Comp' | eps
+Term   -> Factor Term'
+Term'  -> MUL Factor Term' | DIV Factor Term' | eps
+Factor -> LPAREN Expr RPAREN | ID | INT
