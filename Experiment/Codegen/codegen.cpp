@@ -132,7 +132,6 @@ static int evalExpr(ASTNode* node, Env& env);
 
 static int evalFactor(ASTNode* node, Env& env) {
     if (!node) throw std::runtime_error("null Factor");
-    // 如果传入的是 Factor（非终结符），取其第一个子节点
     if (node->sym == "Factor") {
         if (node->children.empty()) throw std::runtime_error("empty Factor");
         return evalFactor(node->children[0], env);
@@ -143,22 +142,47 @@ static int evalFactor(ASTNode* node, Env& env) {
         throw std::runtime_error("unexpected token in Factor: " + node->sym);
     }
     if (node->sym == "LPAREN") {
-        // Factor -> LPAREN Expr RPAREN, Expr is child[0]
         if (node->children.empty()) throw std::runtime_error("empty paren");
         return evalExpr(node->children[0], env);
     }
     throw std::runtime_error("unexpected node in Factor: " + node->sym);
 }
 
+static int evalPowTail(ASTNode* prime, Env& env, int leftVal) {
+    if (!prime || prime->children.empty() || prime->sym != "Power'")
+        return leftVal;
+
+    if (prime->children[0]->sym == "POW") {
+        int expVal = evalFactor(prime->children[1], env);
+        int result = 1;
+        for (int i = 0; i < expVal; i++) result *= leftVal;
+        if (prime->children.size() >= 3)
+            return evalPowTail(prime->children[2], env, result);
+        return result;
+    }
+
+    return leftVal;
+}
+
+static int evalPower(ASTNode* node, Env& env) {
+    if (!node) throw std::runtime_error("null Power");
+    if (node->sym == "Power") {
+        int val = evalFactor(node->children[0], env);
+        if (node->children.size() >= 2)
+            val = evalPowTail(node->children[1], env, val);
+        return val;
+    }
+    return evalFactor(node, env);
+}
+
 static int evalTerm(ASTNode* node, Env& env) {
-    // Term -> Factor Term'
-    int val = evalFactor(node->children[0], env);
+    int val = evalPower(node->children[0], env);
     ASTNode* tprime = (node->children.size() >= 2) ? node->children[1] : nullptr;
     while (tprime && !tprime->children.empty() && tprime->sym == "Term'") {
         if (tprime->children[0]->sym == "MUL") {
-            val *= evalFactor(tprime->children[1], env);
+            val *= evalPower(tprime->children[1], env);
         } else if (tprime->children[0]->sym == "DIV") {
-            int rhs = evalFactor(tprime->children[1], env);
+            int rhs = evalPower(tprime->children[1], env);
             if (rhs == 0) throw std::runtime_error("division by zero");
             val /= rhs;
         } else {
@@ -219,9 +243,9 @@ static int evalStmtTailExpr(ASTNode* tail, const std::string& idName, Env& env) 
 
     while (tprime && !tprime->children.empty()) {
         if (tprime->children[0]->sym == "MUL") {
-            val *= evalFactor(tprime->children[1], env);
+            val *= evalPower(tprime->children[1], env);
         } else if (tprime->children[0]->sym == "DIV") {
-            int rhs = evalFactor(tprime->children[1], env);
+            int rhs = evalPower(tprime->children[1], env);
             if (rhs == 0) throw std::runtime_error("division by zero");
             val /= rhs;
         } else break;

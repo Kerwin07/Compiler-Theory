@@ -1,10 +1,12 @@
 x = 5;
 y = 10;
+z = 2 ^ 3;
+w = x + y * z;
 if (x == 5) {
-  z = x + y * 2;
-  z = z + 1;
+  r = x + y * 2;
+  r = r + 1;
 }
 while (x == 5) {
   x = x + 1;
 }
-return z;
+return w;

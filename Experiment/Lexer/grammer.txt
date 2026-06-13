@@ -23,6 +23,7 @@ PLUS    \+
 MINUS   -
 MUL     \*
 DIV     /
+POW     \^
 
 # --- delimiters ---
 LPAREN  \(

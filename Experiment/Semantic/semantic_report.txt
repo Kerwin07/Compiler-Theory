@@ -1,14 +1,24 @@
 SEMANTIC ANALYSIS REPORT
 ========================
 
-[INFO]    defined variable 'x' at Stmt#1
-[INFO]    defined variable 'y' at Stmt#2
-[INFO]    defined variable 'z' at Stmt#5
-[INFO]    reassigned variable 'z' at Stmt#6
-[INFO]    reassigned variable 'x' at Stmt#9
+== Info ==
+[INFO]    defined variable 'x' (type=int, value=5) at Stmt#1
+[INFO]    defined variable 'y' (type=int, value=10) at Stmt#2
+[INFO]    defined variable 'z' (type=int, value=8) at Stmt#3
+[INFO]    defined variable 'w' (type=int, value=85) at Stmt#4
+[INFO]    defined variable 'r' (type=int, value=25) at Stmt#7
+[INFO]    reassigned variable 'r' = 26 at Stmt#8
+[INFO]    reassigned variable 'x' = 6 at Stmt#11
+[INFO]    RETURN value = 85 [type=int] at Stmt#12
+
+== Warnings ==
+
+== Errors ==
 
 SYMBOL TABLE
 ============
-x  defined=true   used=true   definedAt=#1  usedAt=#9
-y  defined=true   used=true   definedAt=#2  usedAt=#5
-z  defined=true   used=true   definedAt=#5  usedAt=#10
+r  type=int  value=26  defined=true   used=true   definedAt=#7  usedAt=#8
+w  type=int  value=85  defined=true   used=true   definedAt=#4  usedAt=#12
+x  type=int  value=6  defined=true   used=true   definedAt=#1  usedAt=#11
+y  type=int  value=10  defined=true   used=true   definedAt=#2  usedAt=#7
+z  type=int  value=8  defined=true   used=true   definedAt=#3  usedAt=#4

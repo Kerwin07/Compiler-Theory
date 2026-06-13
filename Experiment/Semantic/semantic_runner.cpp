@@ -36,31 +36,36 @@ int main() {
         for (auto& s : result.errors) std::cout << "  " << s << std::endl;
     }
 
-    // 输出符号表
     std::cout << "\n-- Symbol Table --" << std::endl;
     for (auto& kv : result.globalScope.symbols) {
         auto& e = kv.second;
         std::cout << "  " << e.name
-                  << " defined=" << (e.defined ? "Y" : "N")
-                  << " used=" << (e.used ? "Y" : "N");
-        if (e.defined) std::cout << " definedAt=#" << e.definedLine;
-        if (e.used) std::cout << " usedAt=#" << e.usedLine;
+                  << "  type=" << typeName(e.type)
+                  << "  value=" << e.value
+                  << "  defined=" << (e.defined ? "Y" : "N")
+                  << "  used=" << (e.used ? "Y" : "N");
+        if (e.defined) std::cout << "  definedAt=#" << e.definedLine;
+        if (e.used) std::cout << "  usedAt=#" << e.usedLine;
         std::cout << std::endl;
     }
 
-    // 输出报告文件
     std::ofstream report("semantic_report.txt");
     if (report.is_open()) {
         report << "SEMANTIC ANALYSIS REPORT\n";
         report << "========================\n\n";
+        report << "== Info ==\n";
         for (auto& s : result.infos)    report << "[INFO]    " << s << "\n";
+        report << "\n== Warnings ==\n";
         for (auto& s : result.warnings) report << "[WARNING] " << s << "\n";
+        report << "\n== Errors ==\n";
         for (auto& s : result.errors)   report << "[ERROR]   " << s << "\n";
         report << "\nSYMBOL TABLE\n";
         report << "============\n";
         for (auto& kv : result.globalScope.symbols) {
             auto& e = kv.second;
             report << e.name
+                   << "  type=" << typeName(e.type)
+                   << "  value=" << e.value
                    << "  defined=" << (e.defined ? "true " : "false")
                    << "  used=" << (e.used ? "true " : "false")
                    << "  definedAt=#" << e.definedLine

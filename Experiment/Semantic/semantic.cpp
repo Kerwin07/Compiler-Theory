@@ -5,6 +5,8 @@
 #include <sstream>
 #include <stack>
 #include <functional>
+#include <stdexcept>
+#include <cmath>
 
 static std::string escapeString(const std::string& s) {
     std::string r;
@@ -72,7 +74,7 @@ static bool parseString(const std::string& js, size_t& i, std::string& out) {
         }
     }
     if (i >= js.size()) return false;
-    i++; // skip closing "
+    i++;
     return true;
 }
 
@@ -85,18 +87,17 @@ static bool parseLiteral(const std::string& js, size_t& i, std::string& out) {
     return !out.empty();
 }
 
-// 递归解析AST节点
 static ASTNode* parseNode(const std::string& js, size_t& i) {
     skipWhitespace(js, i);
     if (i >= js.size()) return nullptr;
 
-    if (js[i] == 'n') { // null
+    if (js[i] == 'n') {
         i += 4;
         return nullptr;
     }
 
     if (js[i] != '{') return nullptr;
-    i++; // skip {
+    i++;
 
     ASTNode* node = new ASTNode();
 
@@ -149,23 +150,409 @@ ASTNode* loadAST(const std::string& path) {
 }
 
 // ============================================================
-// 语义分析核心逻辑
+// 表达式求值（含类型推断）— 递归遍历 AST
 // ============================================================
 
-// 找出Stmt中定义的变量名（ID StmtTail 中 StmtTail -> ASSIGN Expr）
-static std::string getDefinedVar(ASTNode* stmtNode) {
-    if (stmtNode->sym != "Stmt") return "";
-    if (stmtNode->children.size() < 3) return "";
-    if (stmtNode->children[0]->sym != "ID") return "";
+static EvalResult evalFactor(ASTNode* node,
+                             const std::map<std::string, SymbolEntry>& symbols,
+                             std::vector<std::string>& diag);
 
-    auto* tail = stmtNode->children[1];
-    if (tail->sym != "StmtTail") return "";
-    if (tail->children.empty()) return "";
-    if (tail->children[0]->sym == "ASSIGN") {
-        return stmtNode->children[0]->lexeme;
+static EvalResult evalPower(ASTNode* node,
+                            const std::map<std::string, SymbolEntry>& symbols,
+                            std::vector<std::string>& diag);
+
+static EvalResult evalTerm(ASTNode* node,
+                           const std::map<std::string, SymbolEntry>& symbols,
+                           std::vector<std::string>& diag);
+
+static EvalResult evalComp(ASTNode* node,
+                           const std::map<std::string, SymbolEntry>& symbols,
+                           std::vector<std::string>& diag);
+
+static EvalResult evalExprInternal(ASTNode* node,
+                                   const std::map<std::string, SymbolEntry>& symbols,
+                                   std::vector<std::string>& diag);
+
+static EvalResult promoteToFloat(const EvalResult& v) {
+    EvalResult r = v;
+    if (v.type == VarType::TY_INT) {
+        r.type = VarType::TY_FLOAT;
+        r.floatVal = (double)v.intVal;
     }
-    return "";
+    return r;
 }
+
+static VarType resultType(VarType a, VarType b, const char* op) {
+    if (a == VarType::TY_ERROR || b == VarType::TY_ERROR) return VarType::TY_ERROR;
+    if (a == VarType::TY_FLOAT || b == VarType::TY_FLOAT) return VarType::TY_FLOAT;
+    return VarType::TY_INT;
+}
+
+static EvalResult makeInt(int val) {
+    EvalResult r;
+    r.type = VarType::TY_INT;
+    r.intVal = val;
+    return r;
+}
+
+static EvalResult makeBool(bool val) {
+    EvalResult r;
+    r.type = VarType::TY_BOOL;
+    r.intVal = val ? 1 : 0;
+    return r;
+}
+
+static EvalResult evalFactor(ASTNode* node,
+                             const std::map<std::string, SymbolEntry>& symbols,
+                             std::vector<std::string>& diag) {
+    if (!node) {
+        diag.push_back("null node in Factor");
+        return {}; // TY_ERROR
+    }
+
+    if (node->sym == "Factor") {
+        if (node->children.empty()) {
+            diag.push_back("empty Factor");
+            return {};
+        }
+        return evalFactor(node->children[0], symbols, diag);
+    }
+
+    if (node->isToken) {
+        if (node->sym == "ID") {
+            auto it = symbols.find(node->lexeme);
+            if (it == symbols.end() || !it->second.defined) {
+                diag.push_back("undefined variable '" + node->lexeme + "' in expression");
+                return {};
+            }
+            EvalResult r;
+            r.type = it->second.type;
+            r.intVal = it->second.value;
+            r.floatVal = (double)it->second.value;
+            return r;
+        }
+        if (node->sym == "INT") {
+            EvalResult r;
+            r.type = VarType::TY_INT;
+            r.intVal = std::stoi(node->lexeme);
+            r.floatVal = (double)r.intVal;
+            return r;
+        }
+        if (node->sym == "FLOAT") {
+            EvalResult r;
+            r.type = VarType::TY_FLOAT;
+            r.floatVal = std::stod(node->lexeme);
+            r.intVal = (int)r.floatVal;
+            return r;
+        }
+        diag.push_back("unexpected token in Factor: " + node->sym);
+        return {};
+    }
+
+    if (node->sym == "LPAREN") {
+        if (node->children.empty()) {
+            diag.push_back("empty paren");
+            return {};
+        }
+        return evalExprInternal(node->children[0], symbols, diag);
+    }
+
+    diag.push_back("unexpected node in Factor: " + node->sym);
+    return {};
+}
+
+static EvalResult evalPowerTail(ASTNode* prime,
+                                const std::map<std::string, SymbolEntry>& symbols,
+                                std::vector<std::string>& diag,
+                                const EvalResult& leftVal);
+
+static EvalResult evalPower(ASTNode* node,
+                            const std::map<std::string, SymbolEntry>& symbols,
+                            std::vector<std::string>& diag) {
+    if (!node) { diag.push_back("null Power"); return {}; }
+
+    if (node->sym == "Power") {
+        // Power -> Factor Power'
+        EvalResult val = evalFactor(node->children[0], symbols, diag);
+        if (node->children.size() >= 2)
+            val = evalPowerTail(node->children[1], symbols, diag, val);
+        return val;
+    }
+
+    return evalFactor(node, symbols, diag);
+}
+
+static EvalResult evalPowerTail(ASTNode* prime,
+                               const std::map<std::string, SymbolEntry>& symbols,
+                               std::vector<std::string>& diag,
+                               const EvalResult& leftVal) {
+    if (!prime || prime->children.empty() || prime->sym != "Power'")
+        return leftVal;
+
+    // Power' -> POW Factor Power'
+    if (prime->children[0]->sym == "POW") {
+        EvalResult right = evalFactor(prime->children[1], symbols, diag);
+        if (leftVal.type == VarType::TY_ERROR || right.type == VarType::TY_ERROR) return {};
+
+        double base = (leftVal.type == VarType::TY_FLOAT) ? leftVal.floatVal : (double)leftVal.intVal;
+        double exp  = (right.type == VarType::TY_FLOAT) ? right.floatVal : (double)right.intVal;
+
+        EvalResult res;
+        res.type = (leftVal.type == VarType::TY_FLOAT || right.type == VarType::TY_FLOAT)
+                       ? VarType::TY_FLOAT : VarType::TY_INT;
+        double dval = std::pow(base, exp);
+        if (res.type == VarType::TY_INT) {
+            res.intVal = (int)dval;
+            res.floatVal = dval;
+        } else {
+            res.floatVal = dval;
+            res.intVal = (int)dval;
+        }
+
+        if (prime->children.size() >= 3)
+            return evalPowerTail(prime->children[2], symbols, diag, res);
+        return res;
+    }
+
+    return leftVal;
+}
+
+static EvalResult evalTerm(ASTNode* node,
+                           const std::map<std::string, SymbolEntry>& symbols,
+                           std::vector<std::string>& diag) {
+    // Term -> Power Term'
+    EvalResult val = evalPower(node->children[0], symbols, diag);
+    ASTNode* tprime = (node->children.size() >= 2) ? node->children[1] : nullptr;
+
+    while (tprime && !tprime->children.empty() && tprime->sym == "Term'") {
+        if (tprime->children[0]->sym == "MUL") {
+            EvalResult rhs = evalPower(tprime->children[1], symbols, diag);
+            if (val.type == VarType::TY_ERROR || rhs.type == VarType::TY_ERROR) return {};
+            VarType restype = resultType(val.type, rhs.type, "*");
+            if (restype == VarType::TY_FLOAT) {
+                val = promoteToFloat(val);
+                rhs = promoteToFloat(rhs);
+                val.floatVal *= rhs.floatVal;
+                val.intVal = (int)val.floatVal;
+            } else {
+                val.intVal *= rhs.intVal;
+                val.floatVal = (double)val.intVal;
+            }
+            val.type = restype;
+        } else if (tprime->children[0]->sym == "DIV") {
+            EvalResult rhs = evalPower(tprime->children[1], symbols, diag);
+            if (val.type == VarType::TY_ERROR || rhs.type == VarType::TY_ERROR) return {};
+            int rhsInt = rhs.intVal;
+            double rhsFloat = rhs.floatVal;
+            if (rhsFloat == 0.0) {
+                diag.push_back("division by zero");
+                return {};
+            }
+            VarType restype = (val.type == VarType::TY_FLOAT || rhs.type == VarType::TY_FLOAT)
+                                  ? VarType::TY_FLOAT : VarType::TY_INT;
+            val = promoteToFloat(val);
+            val.floatVal /= rhsFloat;
+            val.intVal = (int)val.floatVal;
+            val.type = restype;
+        } else {
+            break;
+        }
+        tprime = (tprime->children.size() >= 3) ? tprime->children[2] : nullptr;
+    }
+    return val;
+}
+
+static EvalResult evalComp(ASTNode* node,
+                           const std::map<std::string, SymbolEntry>& symbols,
+                           std::vector<std::string>& diag) {
+    // Comp -> Term Comp'
+    EvalResult val = evalTerm(node->children[0], symbols, diag);
+    ASTNode* cprime = (node->children.size() >= 2) ? node->children[1] : nullptr;
+
+    while (cprime && !cprime->children.empty() && cprime->sym == "Comp'") {
+        if (cprime->children[0]->sym == "PLUS") {
+            EvalResult rhs = evalTerm(cprime->children[1], symbols, diag);
+            if (val.type == VarType::TY_ERROR || rhs.type == VarType::TY_ERROR) return {};
+            VarType restype = resultType(val.type, rhs.type, "+");
+            if (restype == VarType::TY_FLOAT) {
+                val = promoteToFloat(val);
+                rhs = promoteToFloat(rhs);
+                val.floatVal += rhs.floatVal;
+                val.intVal = (int)val.floatVal;
+            } else {
+                val.intVal += rhs.intVal;
+                val.floatVal = (double)val.intVal;
+            }
+            val.type = restype;
+        } else if (cprime->children[0]->sym == "MINUS") {
+            EvalResult rhs = evalTerm(cprime->children[1], symbols, diag);
+            if (val.type == VarType::TY_ERROR || rhs.type == VarType::TY_ERROR) return {};
+            VarType restype = resultType(val.type, rhs.type, "-");
+            if (restype == VarType::TY_FLOAT) {
+                val = promoteToFloat(val);
+                rhs = promoteToFloat(rhs);
+                val.floatVal -= rhs.floatVal;
+                val.intVal = (int)val.floatVal;
+            } else {
+                val.intVal -= rhs.intVal;
+                val.floatVal = (double)val.intVal;
+            }
+            val.type = restype;
+        } else {
+            break;
+        }
+        cprime = (cprime->children.size() >= 3) ? cprime->children[2] : nullptr;
+    }
+    return val;
+}
+
+static EvalResult evalExprInternal(ASTNode* node,
+                                   const std::map<std::string, SymbolEntry>& symbols,
+                                   std::vector<std::string>& diag) {
+    // Expr -> Comp Expr'
+    EvalResult val = evalComp(node->children[0], symbols, diag);
+    ASTNode* eprime = (node->children.size() >= 2) ? node->children[1] : nullptr;
+
+    while (eprime && !eprime->children.empty() && eprime->sym == "Expr'") {
+        if (eprime->children[0]->sym == "EQ") {
+            EvalResult rhs = evalComp(eprime->children[1], symbols, diag);
+            if (val.type == VarType::TY_ERROR || rhs.type == VarType::TY_ERROR) return {};
+            bool equal = false;
+            if (val.type == VarType::TY_FLOAT || rhs.type == VarType::TY_FLOAT) {
+                double va = (val.type == VarType::TY_FLOAT) ? val.floatVal : (double)val.intVal;
+                double vb = (rhs.type == VarType::TY_FLOAT) ? rhs.floatVal : (double)rhs.intVal;
+                equal = (va == vb);
+            } else {
+                equal = (val.intVal == rhs.intVal);
+            }
+            val = makeBool(equal);
+        } else {
+            break;
+        }
+        eprime = (eprime->children.size() >= 3) ? eprime->children[2] : nullptr;
+    }
+    return val;
+}
+
+EvalResult evalExpr(ASTNode* expr,
+                    const std::map<std::string, SymbolEntry>& symbols,
+                    std::vector<std::string>& diag) {
+    return evalExprInternal(expr, symbols, diag);
+}
+
+// ============================================================
+// 表达式尾部求值（ID StmtTail 中 StmtTail = Term' Comp' Expr'）
+// ============================================================
+
+static EvalResult evalStmtTailExpr(ASTNode* tail, const std::string& idName,
+                                   const std::map<std::string, SymbolEntry>& symbols,
+                                   std::vector<std::string>& diag) {
+    auto it = symbols.find(idName);
+    if (it == symbols.end() || !it->second.defined) {
+        diag.push_back("undefined variable '" + idName + "' in expression");
+        return {};
+    }
+
+    EvalResult val;
+    val.type = it->second.type;
+    val.intVal = it->second.value;
+    val.floatVal = (double)it->second.value;
+
+    ASTNode* tprime = nullptr;
+    ASTNode* cprime = nullptr;
+    ASTNode* eprime = nullptr;
+
+    for (auto* c : tail->children) {
+        if (c->sym == "Term'")  tprime = c;
+        if (c->sym == "Comp'")  cprime = c;
+        if (c->sym == "Expr'")  eprime = c;
+    }
+
+    while (tprime && !tprime->children.empty()) {
+        if (tprime->children[0]->sym == "MUL") {
+            EvalResult rhs = evalPower(tprime->children[1], symbols, diag);
+            if (val.type == VarType::TY_ERROR || rhs.type == VarType::TY_ERROR) return {};
+            VarType restype = resultType(val.type, rhs.type, "*");
+            if (restype == VarType::TY_FLOAT) {
+                val = promoteToFloat(val);
+                rhs = promoteToFloat(rhs);
+                val.floatVal *= rhs.floatVal;
+                val.intVal = (int)val.floatVal;
+            } else {
+                val.intVal *= rhs.intVal;
+                val.floatVal = (double)val.intVal;
+            }
+            val.type = restype;
+        } else if (tprime->children[0]->sym == "DIV") {
+            EvalResult rhs = evalPower(tprime->children[1], symbols, diag);
+            if (val.type == VarType::TY_ERROR || rhs.type == VarType::TY_ERROR) return {};
+            if (rhs.floatVal == 0.0) { diag.push_back("division by zero"); return {}; }
+            VarType restype = (val.type == VarType::TY_FLOAT || rhs.type == VarType::TY_FLOAT)
+                                  ? VarType::TY_FLOAT : VarType::TY_INT;
+            val = promoteToFloat(val);
+            val.floatVal /= rhs.floatVal;
+            val.intVal = (int)val.floatVal;
+            val.type = restype;
+        } else break;
+        tprime = (tprime->children.size() >= 3) ? tprime->children[2] : nullptr;
+    }
+
+    while (cprime && !cprime->children.empty()) {
+        if (cprime->children[0]->sym == "PLUS") {
+            EvalResult rhs = evalTerm(cprime->children[1], symbols, diag);
+            if (val.type == VarType::TY_ERROR || rhs.type == VarType::TY_ERROR) return {};
+            VarType restype = resultType(val.type, rhs.type, "+");
+            if (restype == VarType::TY_FLOAT) {
+                val = promoteToFloat(val);
+                rhs = promoteToFloat(rhs);
+                val.floatVal += rhs.floatVal;
+                val.intVal = (int)val.floatVal;
+            } else {
+                val.intVal += rhs.intVal;
+                val.floatVal = (double)val.intVal;
+            }
+            val.type = restype;
+        } else if (cprime->children[0]->sym == "MINUS") {
+            EvalResult rhs = evalTerm(cprime->children[1], symbols, diag);
+            if (val.type == VarType::TY_ERROR || rhs.type == VarType::TY_ERROR) return {};
+            VarType restype = resultType(val.type, rhs.type, "-");
+            if (restype == VarType::TY_FLOAT) {
+                val = promoteToFloat(val);
+                rhs = promoteToFloat(rhs);
+                val.floatVal -= rhs.floatVal;
+                val.intVal = (int)val.floatVal;
+            } else {
+                val.intVal -= rhs.intVal;
+                val.floatVal = (double)val.intVal;
+            }
+            val.type = restype;
+        } else break;
+        cprime = (cprime->children.size() >= 3) ? cprime->children[2] : nullptr;
+    }
+
+    while (eprime && !eprime->children.empty()) {
+        if (eprime->children[0]->sym == "EQ") {
+            EvalResult rhs = evalComp(eprime->children[1], symbols, diag);
+            if (val.type == VarType::TY_ERROR || rhs.type == VarType::TY_ERROR) return {};
+            bool equal = false;
+            if (val.type == VarType::TY_FLOAT || rhs.type == VarType::TY_FLOAT) {
+                double va = (val.type == VarType::TY_FLOAT) ? val.floatVal : (double)val.intVal;
+                double vb = (rhs.type == VarType::TY_FLOAT) ? rhs.floatVal : (double)rhs.intVal;
+                equal = (va == vb);
+            } else {
+                equal = (val.intVal == rhs.intVal);
+            }
+            val = makeBool(equal);
+        } else break;
+        eprime = (eprime->children.size() >= 3) ? eprime->children[2] : nullptr;
+    }
+
+    return val;
+}
+
+// ============================================================
+// 语义分析核心逻辑
+// ============================================================
 
 static void collectUsedVars(ASTNode* node, std::vector<std::string>& vars) {
     if (!node) return;
@@ -183,7 +570,6 @@ static void collectUsedVars(ASTNode* node, std::set<std::string>& vars) {
     for (auto* c : node->children) collectUsedVars(c, vars);
 }
 
-// 主分析函数
 bool analyzeSemantics(ASTNode* root, SemanticResult& result) {
     result = SemanticResult{};
     if (!root) {
@@ -192,7 +578,7 @@ bool analyzeSemantics(ASTNode* root, SemanticResult& result) {
     }
 
     int nodeIndex = 0;
-    std::set<std::string> reportedWarnings; // 去重
+    std::set<std::string> reportedWarnings;
 
     auto addWarning = [&](const std::string& key, const std::string& msg) {
         if (reportedWarnings.insert(key).second)
@@ -205,56 +591,75 @@ bool analyzeSemantics(ASTNode* root, SemanticResult& result) {
         if (node->sym == "Stmt") {
             nodeIndex++;
 
-            // 判断语句类型
             if (node->children.empty()) { return; }
             const std::string& first = node->children[0]->sym;
 
-            // 赋值语句: ID StmtTail SEMI, StmtTail -> ASSIGN Expr
             if (first == "ID" && node->children.size() >= 2 &&
                 node->children[1]->sym == "StmtTail" &&
                 !node->children[1]->children.empty() &&
                 node->children[1]->children[0]->sym == "ASSIGN") {
 
                 std::string var = node->children[0]->lexeme;
+                auto* tail = node->children[1];
+                auto* expr = tail->children[1]; // ASSIGN Expr
+
+                // 求值 RHS 表达式
+                std::vector<std::string> diag;
+                EvalResult rhs = evalExpr(expr, result.globalScope.symbols, diag);
+
+                for (auto& d : diag) {
+                    result.errors.push_back("Stmt#" + std::to_string(nodeIndex) + ": " + d);
+                }
+
                 auto* entry = &result.globalScope.symbols[var];
 
                 if (!entry->defined) {
                     entry->name = var;
                     entry->defined = true;
                     entry->definedLine = nodeIndex;
+                    entry->type = (rhs.type != VarType::TY_ERROR) ? rhs.type : VarType::TY_INT;
+                    entry->value = rhs.intVal;
                     result.infos.push_back(
-                        "defined variable '" + var + "' at Stmt#" +
+                        "defined variable '" + var + "' (type=" + std::string(typeName(entry->type)) +
+                        ", value=" + std::to_string(rhs.intVal) + ") at Stmt#" +
                         std::to_string(nodeIndex));
                 } else {
+                    VarType oldType = entry->type;
+                    VarType newType = (rhs.type != VarType::TY_ERROR) ? rhs.type : VarType::TY_INT;
+
+                    if (oldType != VarType::TY_ERROR && newType != VarType::TY_ERROR &&
+                        oldType != newType) {
+                        result.warnings.push_back(
+                            "type mismatch: variable '" + var +
+                            "' was " + std::string(typeName(oldType)) +
+                            ", reassigned to " + std::string(typeName(newType)) +
+                            " at Stmt#" + std::to_string(nodeIndex));
+                    }
+
+                    entry->value = rhs.intVal;
                     result.infos.push_back(
-                        "reassigned variable '" + var + "' at Stmt#" +
+                        "reassigned variable '" + var +
+                        "' = " + std::to_string(rhs.intVal) + " at Stmt#" +
                         std::to_string(nodeIndex));
                 }
 
-                // 检查 RHS 中的变量引用
-                auto* tail = node->children[1];
-                for (auto* tc : tail->children) {
-                    if (tc->sym == "Expr") {
-                        std::vector<std::string> used;
-                        collectUsedVars(tc, used);
-                        for (auto& u : used) {
-                            auto* ue = &result.globalScope.symbols[u];
-                            if (!ue->defined) {
-                                addWarning("use_before_def_" + u + "@" + std::to_string(nodeIndex),
-                                    "variable '" + u + "' used before assignment at Stmt#" +
-                                    std::to_string(nodeIndex));
-                            }
-                            ue->used = true;
-                            ue->usedLine = nodeIndex;
-                        }
+                // 也收集 Expr 中的变量引用（已通过 evalExpr 间接检查）
+                std::vector<std::string> used;
+                collectUsedVars(expr, used);
+                for (auto& u : used) {
+                    auto* ue = &result.globalScope.symbols[u];
+                    if (!ue->defined) {
+                        addWarning("use_before_def_" + u + "@" + std::to_string(nodeIndex),
+                            "variable '" + u + "' used before assignment at Stmt#" +
+                            std::to_string(nodeIndex));
                     }
+                    ue->used = true;
+                    ue->usedLine = nodeIndex;
                 }
             }
-            // 表达式语句: ID StmtTail (无赋值)
             else if (first == "ID") {
                 std::set<std::string> stmtUsed;
                 stmtUsed.insert(node->children[0]->lexeme);
-                // 仅收集 StmtTail 中的引用（不含子语句）
                 if (node->children.size() >= 2 && node->children[1]->sym == "StmtTail") {
                     collectUsedVars(node->children[1], stmtUsed);
                 }
@@ -269,8 +674,22 @@ bool analyzeSemantics(ASTNode* root, SemanticResult& result) {
                     entry->usedLine = nodeIndex;
                     entry->name = u;
                 }
+
+                if (node->children.size() >= 2 && node->children[1]->sym == "StmtTail") {
+                    std::vector<std::string> diag;
+                    EvalResult val = evalStmtTailExpr(node->children[1],
+                                                      node->children[0]->lexeme,
+                                                      result.globalScope.symbols, diag);
+                    for (auto& d : diag)
+                        result.errors.push_back("Stmt#" + std::to_string(nodeIndex) + ": " + d);
+                    if (val.type != VarType::TY_ERROR) {
+                        result.infos.push_back("expr '" + node->children[0]->lexeme +
+                                               "...' = " + std::to_string(val.intVal) +
+                                               " [type=" + std::string(typeName(val.type)) +
+                                               "] at Stmt#" + std::to_string(nodeIndex));
+                    }
+                }
             }
-            // IF: 只检查条件中的引用
             else if (first == "IF") {
                 if (node->children.size() >= 3 && node->children[2]->sym == "Expr") {
                     std::set<std::string> used;
@@ -286,9 +705,20 @@ bool analyzeSemantics(ASTNode* root, SemanticResult& result) {
                         ue->usedLine = nodeIndex;
                         ue->name = u;
                     }
+
+                    std::vector<std::string> diag;
+                    EvalResult cond = evalExpr(node->children[2],
+                                               result.globalScope.symbols, diag);
+                    for (auto& d : diag)
+                        result.errors.push_back("Stmt#" + std::to_string(nodeIndex) + ": " + d);
+                    if (cond.type != VarType::TY_ERROR && cond.type != VarType::TY_BOOL) {
+                        result.infos.push_back("IF condition evaluated to " +
+                                               std::string(typeName(cond.type)) +
+                                               " (" + (cond.isTrue() ? "true" : "false") +
+                                               ") at Stmt#" + std::to_string(nodeIndex));
+                    }
                 }
             }
-            // WHILE: 只检查条件中的引用
             else if (first == "WHILE") {
                 if (node->children.size() >= 3 && node->children[2]->sym == "Expr") {
                     std::set<std::string> used;
@@ -304,9 +734,19 @@ bool analyzeSemantics(ASTNode* root, SemanticResult& result) {
                         ue->usedLine = nodeIndex;
                         ue->name = u;
                     }
+
+                    std::vector<std::string> diag;
+                    EvalResult cond = evalExpr(node->children[2],
+                                               result.globalScope.symbols, diag);
+                    for (auto& d : diag)
+                        result.errors.push_back("Stmt#" + std::to_string(nodeIndex) + ": " + d);
+                    if (cond.type != VarType::TY_ERROR && cond.type != VarType::TY_BOOL) {
+                        result.infos.push_back("WHILE condition evaluated to " +
+                                               std::string(typeName(cond.type)) +
+                                               " at Stmt#" + std::to_string(nodeIndex));
+                    }
                 }
             }
-            // RETURN: 检查返回值表达式
             else if (first == "RETURN") {
                 if (node->children.size() >= 2 && node->children[1]->sym == "Expr") {
                     std::set<std::string> used;
@@ -322,9 +762,20 @@ bool analyzeSemantics(ASTNode* root, SemanticResult& result) {
                         ue->usedLine = nodeIndex;
                         ue->name = u;
                     }
+
+                    std::vector<std::string> diag;
+                    EvalResult retVal = evalExpr(node->children[1],
+                                                 result.globalScope.symbols, diag);
+                    for (auto& d : diag)
+                        result.errors.push_back("Stmt#" + std::to_string(nodeIndex) + ": " + d);
+                    if (retVal.type != VarType::TY_ERROR) {
+                        result.infos.push_back("RETURN value = " +
+                                               std::to_string(retVal.intVal) +
+                                               " [type=" + std::string(typeName(retVal.type)) +
+                                               "] at Stmt#" + std::to_string(nodeIndex));
+                    }
                 }
             }
-            // LBRACE / SEMI: 无需检查
         }
 
         for (auto* c : node->children) walk(c);
@@ -332,7 +783,6 @@ bool analyzeSemantics(ASTNode* root, SemanticResult& result) {
 
     walk(root);
 
-    // 检查已声明但未使用的变量
     for (auto& kv : result.globalScope.symbols) {
         if (kv.second.defined && !kv.second.used) {
             result.warnings.push_back(

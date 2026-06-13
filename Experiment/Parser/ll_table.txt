@@ -1,7 +1,7 @@
 START S
-NONTERMINALS Comp Comp' ElseOpt Expr Expr' Factor S Stmt StmtList StmtTail Term Term'
-TERMINALS ASSIGN DIV ELSE EQ ID IF INT LBRACE LPAREN MINUS MUL PLUS RBRACE RETURN RPAREN SEMI WHILE $
-PRODUCTIONS 27
+NONTERMINALS Comp Comp' ElseOpt Expr Expr' Factor Power Power' S Stmt StmtList StmtTail Term Term'
+TERMINALS ASSIGN DIV ELSE EQ ID IF INT LBRACE LPAREN MINUS MUL PLUS POW RBRACE RETURN RPAREN SEMI WHILE $
+PRODUCTIONS 30
 0: S -> StmtList
 1: StmtList -> Stmt StmtList
 2: StmtList -> eps
@@ -22,13 +22,16 @@ PRODUCTIONS 27
 17: Comp' -> PLUS Term Comp'
 18: Comp' -> MINUS Term Comp'
 19: Comp' -> eps
-20: Term -> Factor Term'
-21: Term' -> MUL Factor Term'
-22: Term' -> DIV Factor Term'
+20: Term -> Power Term'
+21: Term' -> MUL Power Term'
+22: Term' -> DIV Power Term'
 23: Term' -> eps
-24: Factor -> LPAREN Expr RPAREN
-25: Factor -> ID
-26: Factor -> INT
+24: Power -> Factor Power'
+25: Power' -> POW Factor Power'
+26: Power' -> eps
+27: Factor -> LPAREN Expr RPAREN
+28: Factor -> ID
+29: Factor -> INT
 FIRST
 S: ID IF LBRACE RETURN SEMI WHILE eps
 FOLLOW
@@ -37,7 +40,9 @@ Comp': EQ RPAREN SEMI
 ElseOpt: $ ELSE ID IF LBRACE RBRACE RETURN SEMI WHILE
 Expr: RPAREN SEMI
 Expr': RPAREN SEMI
-Factor: DIV EQ MINUS MUL PLUS RPAREN SEMI
+Factor: DIV EQ MINUS MUL PLUS POW RPAREN SEMI
+Power: DIV EQ MINUS MUL PLUS RPAREN SEMI
+Power': DIV EQ MINUS MUL PLUS RPAREN SEMI
 S: $
 Stmt: $ ELSE ID IF LBRACE RBRACE RETURN SEMI WHILE
 StmtList: $ RBRACE
@@ -68,9 +73,20 @@ Expr LPAREN 13
 Expr' EQ 14
 Expr' RPAREN 15
 Expr' SEMI 15
-Factor ID 25
-Factor INT 26
-Factor LPAREN 24
+Factor ID 28
+Factor INT 29
+Factor LPAREN 27
+Power ID 24
+Power INT 24
+Power LPAREN 24
+Power' DIV 26
+Power' EQ 26
+Power' MINUS 26
+Power' MUL 26
+Power' PLUS 26
+Power' POW 25
+Power' RPAREN 26
+Power' SEMI 26
 S $ 0
 S ID 0
 S IF 0
