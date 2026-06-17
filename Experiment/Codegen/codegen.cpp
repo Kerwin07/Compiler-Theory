@@ -134,6 +134,9 @@ static int evalFactor(ASTNode* node, Env& env) {
     if (!node) throw std::runtime_error("null Factor");
     if (node->sym == "Factor") {
         if (node->children.empty()) throw std::runtime_error("empty Factor");
+        if (node->children[0]->isToken && node->children[0]->sym == "MINUS") {
+            return -evalFactor(node->children[1], env);
+        }
         return evalFactor(node->children[0], env);
     }
     if (node->isToken) {
@@ -145,31 +148,25 @@ static int evalFactor(ASTNode* node, Env& env) {
         if (node->children.empty()) throw std::runtime_error("empty paren");
         return evalExpr(node->children[0], env);
     }
-    throw std::runtime_error("unexpected node in Factor: " + node->sym);
-}
-
-static int evalPowTail(ASTNode* prime, Env& env, int leftVal) {
-    if (!prime || prime->children.empty() || prime->sym != "Power'")
-        return leftVal;
-
-    if (prime->children[0]->sym == "POW") {
-        int expVal = evalFactor(prime->children[1], env);
-        int result = 1;
-        for (int i = 0; i < expVal; i++) result *= leftVal;
-        if (prime->children.size() >= 3)
-            return evalPowTail(prime->children[2], env, result);
-        return result;
+    if (node->sym == "MINUS") {
+        return -evalFactor(node->children[0], env);
     }
-
-    return leftVal;
+    throw std::runtime_error("unexpected node in Factor: " + node->sym);
 }
 
 static int evalPower(ASTNode* node, Env& env) {
     if (!node) throw std::runtime_error("null Power");
     if (node->sym == "Power") {
         int val = evalFactor(node->children[0], env);
-        if (node->children.size() >= 2)
-            val = evalPowTail(node->children[1], env, val);
+        if (node->children.size() >= 2) {
+            ASTNode* rest = node->children[1];
+            if (!rest->children.empty() && rest->children[0]->sym == "POW") {
+                int expVal = evalPower(rest->children[1], env);
+                int result = 1;
+                for (int i = 0; i < expVal; i++) result *= val;
+                return result;
+            }
+        }
         return val;
     }
     return evalFactor(node, env);
@@ -211,16 +208,18 @@ static int evalComp(ASTNode* node, Env& env) {
 }
 
 static int evalExpr(ASTNode* node, Env& env) {
-    // Expr -> Comp Expr'
     int val = evalComp(node->children[0], env);
     ASTNode* eprime = (node->children.size() >= 2) ? node->children[1] : nullptr;
     while (eprime && !eprime->children.empty() && eprime->sym == "Expr'") {
-        if (eprime->children[0]->sym == "EQ") {
-            int rhs = evalComp(eprime->children[1], env);
-            val = (val == rhs) ? 1 : 0;
-        } else {
-            break;
-        }
+        const std::string& op = eprime->children[0]->sym;
+        int rhs = evalComp(eprime->children[1], env);
+        if (op == "EQ")       val = (val == rhs) ? 1 : 0;
+        else if (op == "NE")  val = (val != rhs) ? 1 : 0;
+        else if (op == "LT")  val = (val < rhs)  ? 1 : 0;
+        else if (op == "GT")  val = (val > rhs)  ? 1 : 0;
+        else if (op == "LE")  val = (val <= rhs) ? 1 : 0;
+        else if (op == "GE")  val = (val >= rhs) ? 1 : 0;
+        else break;
         eprime = (eprime->children.size() >= 3) ? eprime->children[2] : nullptr;
     }
     return val;
@@ -262,10 +261,15 @@ static int evalStmtTailExpr(ASTNode* tail, const std::string& idName, Env& env) 
     }
 
     while (eprime && !eprime->children.empty()) {
-        if (eprime->children[0]->sym == "EQ") {
-            int rhs = evalComp(eprime->children[1], env);
-            val = (val == rhs) ? 1 : 0;
-        } else break;
+        const std::string& op = eprime->children[0]->sym;
+        int rhs = evalComp(eprime->children[1], env);
+        if (op == "EQ")       val = (val == rhs) ? 1 : 0;
+        else if (op == "NE")  val = (val != rhs) ? 1 : 0;
+        else if (op == "LT")  val = (val < rhs)  ? 1 : 0;
+        else if (op == "GT")  val = (val > rhs)  ? 1 : 0;
+        else if (op == "LE")  val = (val <= rhs) ? 1 : 0;
+        else if (op == "GE")  val = (val >= rhs) ? 1 : 0;
+        else break;
         eprime = (eprime->children.size() >= 3) ? eprime->children[2] : nullptr;
     }
 

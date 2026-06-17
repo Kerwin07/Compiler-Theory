@@ -18,12 +18,17 @@ INT     [0-9][0-9]*
 
 # --- operators ---
 EQ      ==
+NE      !=
+GE      >=
+LE      <=
 ASSIGN  =
 PLUS    \+
 MINUS   -
 MUL     \*
 DIV     /
 POW     \^
+GT      >
+LT      <
 
 # --- delimiters ---
 LPAREN  \(

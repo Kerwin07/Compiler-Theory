@@ -1,7 +1,7 @@
 START S
-NONTERMINALS Comp Comp' ElseOpt Expr Expr' Factor Power Power' S Stmt StmtList StmtTail Term Term'
-TERMINALS ASSIGN DIV ELSE EQ ID IF INT LBRACE LPAREN MINUS MUL PLUS POW RBRACE RETURN RPAREN SEMI WHILE $
-PRODUCTIONS 30
+NONTERMINALS Comp Comp' ElseOpt Expr Expr' Factor Power PowerRest S Stmt StmtList StmtTail Term Term'
+TERMINALS ASSIGN DIV ELSE EQ GE GT ID IF INT LBRACE LE LPAREN LT MINUS MUL NE PLUS POW RBRACE RETURN RPAREN SEMI WHILE $
+PRODUCTIONS 36
 0: S -> StmtList
 1: StmtList -> Stmt StmtList
 2: StmtList -> eps
@@ -17,47 +17,59 @@ PRODUCTIONS 30
 12: StmtTail -> Term' Comp' Expr'
 13: Expr -> Comp Expr'
 14: Expr' -> EQ Comp Expr'
-15: Expr' -> eps
-16: Comp -> Term Comp'
-17: Comp' -> PLUS Term Comp'
-18: Comp' -> MINUS Term Comp'
-19: Comp' -> eps
-20: Term -> Power Term'
-21: Term' -> MUL Power Term'
-22: Term' -> DIV Power Term'
-23: Term' -> eps
-24: Power -> Factor Power'
-25: Power' -> POW Factor Power'
-26: Power' -> eps
-27: Factor -> LPAREN Expr RPAREN
-28: Factor -> ID
-29: Factor -> INT
+15: Expr' -> NE Comp Expr'
+16: Expr' -> LT Comp Expr'
+17: Expr' -> GT Comp Expr'
+18: Expr' -> LE Comp Expr'
+19: Expr' -> GE Comp Expr'
+20: Expr' -> eps
+21: Comp -> Term Comp'
+22: Comp' -> PLUS Term Comp'
+23: Comp' -> MINUS Term Comp'
+24: Comp' -> eps
+25: Term -> Power Term'
+26: Term' -> MUL Power Term'
+27: Term' -> DIV Power Term'
+28: Term' -> eps
+29: Power -> Factor PowerRest
+30: PowerRest -> POW Power
+31: PowerRest -> eps
+32: Factor -> LPAREN Expr RPAREN
+33: Factor -> ID
+34: Factor -> INT
+35: Factor -> MINUS Factor
 FIRST
 S: ID IF LBRACE RETURN SEMI WHILE eps
 FOLLOW
-Comp: EQ RPAREN SEMI
-Comp': EQ RPAREN SEMI
+Comp: EQ GE GT LE LT NE RPAREN SEMI
+Comp': EQ GE GT LE LT NE RPAREN SEMI
 ElseOpt: $ ELSE ID IF LBRACE RBRACE RETURN SEMI WHILE
 Expr: RPAREN SEMI
 Expr': RPAREN SEMI
-Factor: DIV EQ MINUS MUL PLUS POW RPAREN SEMI
-Power: DIV EQ MINUS MUL PLUS RPAREN SEMI
-Power': DIV EQ MINUS MUL PLUS RPAREN SEMI
+Factor: DIV EQ GE GT LE LT MINUS MUL NE PLUS POW RPAREN SEMI
+Power: DIV EQ GE GT LE LT MINUS MUL NE PLUS RPAREN SEMI
+PowerRest: DIV EQ GE GT LE LT MINUS MUL NE PLUS RPAREN SEMI
 S: $
 Stmt: $ ELSE ID IF LBRACE RBRACE RETURN SEMI WHILE
 StmtList: $ RBRACE
 StmtTail: SEMI
-Term: EQ MINUS PLUS RPAREN SEMI
-Term': EQ MINUS PLUS RPAREN SEMI
+Term: EQ GE GT LE LT MINUS NE PLUS RPAREN SEMI
+Term': EQ GE GT LE LT MINUS NE PLUS RPAREN SEMI
 TABLE
-Comp ID 16
-Comp INT 16
-Comp LPAREN 16
-Comp' EQ 19
-Comp' MINUS 18
-Comp' PLUS 17
-Comp' RPAREN 19
-Comp' SEMI 19
+Comp ID 21
+Comp INT 21
+Comp LPAREN 21
+Comp MINUS 21
+Comp' EQ 24
+Comp' GE 24
+Comp' GT 24
+Comp' LE 24
+Comp' LT 24
+Comp' MINUS 23
+Comp' NE 24
+Comp' PLUS 22
+Comp' RPAREN 24
+Comp' SEMI 24
 ElseOpt $ 10
 ElseOpt ELSE 9
 ElseOpt ID 10
@@ -70,23 +82,36 @@ ElseOpt WHILE 10
 Expr ID 13
 Expr INT 13
 Expr LPAREN 13
+Expr MINUS 13
 Expr' EQ 14
-Expr' RPAREN 15
-Expr' SEMI 15
-Factor ID 28
-Factor INT 29
-Factor LPAREN 27
-Power ID 24
-Power INT 24
-Power LPAREN 24
-Power' DIV 26
-Power' EQ 26
-Power' MINUS 26
-Power' MUL 26
-Power' PLUS 26
-Power' POW 25
-Power' RPAREN 26
-Power' SEMI 26
+Expr' GE 19
+Expr' GT 17
+Expr' LE 18
+Expr' LT 16
+Expr' NE 15
+Expr' RPAREN 20
+Expr' SEMI 20
+Factor ID 33
+Factor INT 34
+Factor LPAREN 32
+Factor MINUS 35
+Power ID 29
+Power INT 29
+Power LPAREN 29
+Power MINUS 29
+PowerRest DIV 31
+PowerRest EQ 31
+PowerRest GE 31
+PowerRest GT 31
+PowerRest LE 31
+PowerRest LT 31
+PowerRest MINUS 31
+PowerRest MUL 31
+PowerRest NE 31
+PowerRest PLUS 31
+PowerRest POW 30
+PowerRest RPAREN 31
+PowerRest SEMI 31
 S $ 0
 S ID 0
 S IF 0
@@ -111,17 +136,28 @@ StmtList WHILE 1
 StmtTail ASSIGN 11
 StmtTail DIV 12
 StmtTail EQ 12
+StmtTail GE 12
+StmtTail GT 12
+StmtTail LE 12
+StmtTail LT 12
 StmtTail MINUS 12
 StmtTail MUL 12
+StmtTail NE 12
 StmtTail PLUS 12
 StmtTail SEMI 12
-Term ID 20
-Term INT 20
-Term LPAREN 20
-Term' DIV 22
-Term' EQ 23
-Term' MINUS 23
-Term' MUL 21
-Term' PLUS 23
-Term' RPAREN 23
-Term' SEMI 23
+Term ID 25
+Term INT 25
+Term LPAREN 25
+Term MINUS 25
+Term' DIV 27
+Term' EQ 28
+Term' GE 28
+Term' GT 28
+Term' LE 28
+Term' LT 28
+Term' MINUS 28
+Term' MUL 26
+Term' NE 28
+Term' PLUS 28
+Term' RPAREN 28
+Term' SEMI 28

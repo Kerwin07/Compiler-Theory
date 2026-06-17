@@ -1,7 +1,7 @@
 # LL(1) 文法：支持赋值 / 表达式 / 控制流(if-else/while) / 块 / return
 # 终结符名须与词法分析器输出的 token type 一致
-# 运算符优先级：== (最低) < + - < * / < ^ (最高)
-# 非终结符：S StmtList Stmt ElseOpt StmtTail Expr Expr' Comp Comp' Term Term' Power Power' Factor
+# 运算符优先级：== != > < >= <= (最低) < + - < * / < ^ < 一元 - (最高)
+# 非终结符：S StmtList Stmt ElseOpt StmtTail Expr Expr' Comp Comp' Term Term' Power PowerRest Factor
 
 S -> StmtList
 
@@ -14,11 +14,11 @@ ElseOpt -> ELSE Stmt | eps
 StmtTail -> ASSIGN Expr | Term' Comp' Expr'
 
 Expr   -> Comp Expr'
-Expr'  -> EQ Comp Expr' | eps
+Expr'  -> EQ Comp Expr' | NE Comp Expr' | LT Comp Expr' | GT Comp Expr' | LE Comp Expr' | GE Comp Expr' | eps
 Comp   -> Term Comp'
 Comp'  -> PLUS Term Comp' | MINUS Term Comp' | eps
 Term   -> Power Term'
 Term'  -> MUL Power Term' | DIV Power Term' | eps
-Power  -> Factor Power'
-Power' -> POW Factor Power' | eps
-Factor -> LPAREN Expr RPAREN | ID | INT
+Power  -> Factor PowerRest
+PowerRest -> POW Power | eps
+Factor -> LPAREN Expr RPAREN | ID | INT | MINUS Factor

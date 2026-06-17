@@ -215,6 +215,14 @@ static EvalResult evalFactor(ASTNode* node,
             diag.push_back("empty Factor");
             return {};
         }
+        if (node->children[0]->isToken && node->children[0]->sym == "MINUS") {
+            EvalResult inner = evalFactor(node->children[1], symbols, diag);
+            if (inner.type == VarType::TY_ERROR) return {};
+            EvalResult r = inner;
+            r.intVal = -inner.intVal;
+            r.floatVal = -inner.floatVal;
+            return r;
+        }
         return evalFactor(node->children[0], symbols, diag);
     }
 
@@ -261,60 +269,40 @@ static EvalResult evalFactor(ASTNode* node,
     return {};
 }
 
-static EvalResult evalPowerTail(ASTNode* prime,
-                                const std::map<std::string, SymbolEntry>& symbols,
-                                std::vector<std::string>& diag,
-                                const EvalResult& leftVal);
-
 static EvalResult evalPower(ASTNode* node,
                             const std::map<std::string, SymbolEntry>& symbols,
                             std::vector<std::string>& diag) {
     if (!node) { diag.push_back("null Power"); return {}; }
 
     if (node->sym == "Power") {
-        // Power -> Factor Power'
         EvalResult val = evalFactor(node->children[0], symbols, diag);
-        if (node->children.size() >= 2)
-            val = evalPowerTail(node->children[1], symbols, diag, val);
+        if (node->children.size() >= 2) {
+            ASTNode* rest = node->children[1];
+            if (!rest->children.empty() && rest->children[0]->sym == "POW") {
+                EvalResult right = evalPower(rest->children[1], symbols, diag);
+                if (val.type == VarType::TY_ERROR || right.type == VarType::TY_ERROR) return {};
+
+                double base = (val.type == VarType::TY_FLOAT) ? val.floatVal : (double)val.intVal;
+                double exp  = (right.type == VarType::TY_FLOAT) ? right.floatVal : (double)right.intVal;
+
+                EvalResult res;
+                res.type = (val.type == VarType::TY_FLOAT || right.type == VarType::TY_FLOAT)
+                               ? VarType::TY_FLOAT : VarType::TY_INT;
+                double dval = std::pow(base, exp);
+                if (res.type == VarType::TY_INT) {
+                    res.intVal = (int)dval;
+                    res.floatVal = dval;
+                } else {
+                    res.floatVal = dval;
+                    res.intVal = (int)dval;
+                }
+                return res;
+            }
+        }
         return val;
     }
 
     return evalFactor(node, symbols, diag);
-}
-
-static EvalResult evalPowerTail(ASTNode* prime,
-                               const std::map<std::string, SymbolEntry>& symbols,
-                               std::vector<std::string>& diag,
-                               const EvalResult& leftVal) {
-    if (!prime || prime->children.empty() || prime->sym != "Power'")
-        return leftVal;
-
-    // Power' -> POW Factor Power'
-    if (prime->children[0]->sym == "POW") {
-        EvalResult right = evalFactor(prime->children[1], symbols, diag);
-        if (leftVal.type == VarType::TY_ERROR || right.type == VarType::TY_ERROR) return {};
-
-        double base = (leftVal.type == VarType::TY_FLOAT) ? leftVal.floatVal : (double)leftVal.intVal;
-        double exp  = (right.type == VarType::TY_FLOAT) ? right.floatVal : (double)right.intVal;
-
-        EvalResult res;
-        res.type = (leftVal.type == VarType::TY_FLOAT || right.type == VarType::TY_FLOAT)
-                       ? VarType::TY_FLOAT : VarType::TY_INT;
-        double dval = std::pow(base, exp);
-        if (res.type == VarType::TY_INT) {
-            res.intVal = (int)dval;
-            res.floatVal = dval;
-        } else {
-            res.floatVal = dval;
-            res.intVal = (int)dval;
-        }
-
-        if (prime->children.size() >= 3)
-            return evalPowerTail(prime->children[2], symbols, diag, res);
-        return res;
-    }
-
-    return leftVal;
 }
 
 static EvalResult evalTerm(ASTNode* node,
@@ -414,21 +402,23 @@ static EvalResult evalExprInternal(ASTNode* node,
     ASTNode* eprime = (node->children.size() >= 2) ? node->children[1] : nullptr;
 
     while (eprime && !eprime->children.empty() && eprime->sym == "Expr'") {
-        if (eprime->children[0]->sym == "EQ") {
-            EvalResult rhs = evalComp(eprime->children[1], symbols, diag);
-            if (val.type == VarType::TY_ERROR || rhs.type == VarType::TY_ERROR) return {};
-            bool equal = false;
-            if (val.type == VarType::TY_FLOAT || rhs.type == VarType::TY_FLOAT) {
-                double va = (val.type == VarType::TY_FLOAT) ? val.floatVal : (double)val.intVal;
-                double vb = (rhs.type == VarType::TY_FLOAT) ? rhs.floatVal : (double)rhs.intVal;
-                equal = (va == vb);
-            } else {
-                equal = (val.intVal == rhs.intVal);
-            }
-            val = makeBool(equal);
-        } else {
-            break;
-        }
+        const std::string& op = eprime->children[0]->sym;
+        EvalResult rhs = evalComp(eprime->children[1], symbols, diag);
+        if (val.type == VarType::TY_ERROR || rhs.type == VarType::TY_ERROR) return {};
+
+        double va = (val.type == VarType::TY_FLOAT) ? val.floatVal : (double)val.intVal;
+        double vb = (rhs.type == VarType::TY_FLOAT) ? rhs.floatVal : (double)rhs.intVal;
+
+        bool result = false;
+        if (op == "EQ")       result = (va == vb);
+        else if (op == "NE")  result = (va != vb);
+        else if (op == "LT")  result = (va < vb);
+        else if (op == "GT")  result = (va > vb);
+        else if (op == "LE")  result = (va <= vb);
+        else if (op == "GE")  result = (va >= vb);
+        else break;
+
+        val = makeBool(result);
         eprime = (eprime->children.size() >= 3) ? eprime->children[2] : nullptr;
     }
     return val;
@@ -531,19 +521,23 @@ static EvalResult evalStmtTailExpr(ASTNode* tail, const std::string& idName,
     }
 
     while (eprime && !eprime->children.empty()) {
-        if (eprime->children[0]->sym == "EQ") {
-            EvalResult rhs = evalComp(eprime->children[1], symbols, diag);
-            if (val.type == VarType::TY_ERROR || rhs.type == VarType::TY_ERROR) return {};
-            bool equal = false;
-            if (val.type == VarType::TY_FLOAT || rhs.type == VarType::TY_FLOAT) {
-                double va = (val.type == VarType::TY_FLOAT) ? val.floatVal : (double)val.intVal;
-                double vb = (rhs.type == VarType::TY_FLOAT) ? rhs.floatVal : (double)rhs.intVal;
-                equal = (va == vb);
-            } else {
-                equal = (val.intVal == rhs.intVal);
-            }
-            val = makeBool(equal);
-        } else break;
+        const std::string& op = eprime->children[0]->sym;
+        EvalResult rhs = evalComp(eprime->children[1], symbols, diag);
+        if (val.type == VarType::TY_ERROR || rhs.type == VarType::TY_ERROR) return {};
+
+        double va = (val.type == VarType::TY_FLOAT) ? val.floatVal : (double)val.intVal;
+        double vb = (rhs.type == VarType::TY_FLOAT) ? rhs.floatVal : (double)rhs.intVal;
+
+        bool result = false;
+        if (op == "EQ")       result = (va == vb);
+        else if (op == "NE")  result = (va != vb);
+        else if (op == "LT")  result = (va < vb);
+        else if (op == "GT")  result = (va > vb);
+        else if (op == "LE")  result = (va <= vb);
+        else if (op == "GE")  result = (va >= vb);
+        else break;
+
+        val = makeBool(result);
         eprime = (eprime->children.size() >= 3) ? eprime->children[2] : nullptr;
     }
 

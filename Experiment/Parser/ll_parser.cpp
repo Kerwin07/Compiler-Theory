@@ -7,6 +7,7 @@
 #include <iostream>
 #include <stack>
 #include <functional>
+#include <set>
 
 static bool isNonTerminalSym(const Grammar& g, const std::string& sym) {
     return g.nonterminals.count(sym) != 0;
@@ -27,6 +28,14 @@ static void writeStep(std::ofstream& out,
 
     out << "ACTION: " << action << "\n";
     out << "---\n";
+}
+
+static bool isSyncToken(const std::string& tok) {
+    static const std::set<std::string> sync = {
+        "SEMI", "RBRACE", "RPAREN",
+        "IF", "WHILE", "RETURN", "ID", "LBRACE"
+    };
+    return sync.count(tok) || tok == END;
 }
 
 int main() {
@@ -83,6 +92,7 @@ int main() {
     ASTNode* root = nullptr;
 
     size_t ip = 0;
+    int errorCount = 0;
 
     writeStep(out, stk, input, ip, "INIT");
 
@@ -92,26 +102,20 @@ int main() {
 
         if (X == END && a == END) {
             writeStep(out, stk, input, ip, "ACCEPT");
-            std::cout << "ACCEPT" << std::endl;
             break;
         }
 
         if (!isNonTerminalSym(g, X) || X == END) {
-            // 终结符匹配
             if (X == a) {
-                // create leaf node for token
                 ASTNode* leaf = new ASTNode(X, true, toks[ip].lexeme);
                 stk.pop_back();
                 ip++;
-                // attach to current collector if any, otherwise it is root (rare)
                 if (!collectors.empty()) {
                     collectors.back().children.push_back(leaf);
                     collectors.back().remaining -= 1;
-                    // collapse completed collectors
                     while (!collectors.empty() && collectors.back().remaining == 0) {
                         Collector c = collectors.back(); collectors.pop_back();
                         ASTNode* p = new ASTNode(c.parent, false);
-                        // children are collected left-to-right
                         for (auto child : c.children) p->children.push_back(child);
                         if (!collectors.empty()) {
                             collectors.back().children.push_back(p);
@@ -125,58 +129,49 @@ int main() {
                 }
                 writeStep(out, stk, input, ip, std::string("MATCH ") + a);
             } else {
+                errorCount++;
                 writeStep(out, stk, input, ip, std::string("ERROR: expected ") + X + ", got " + a);
-                std::cerr << "parse error: expected " << X << ", got " << a << std::endl;
-                return 2;
+                std::cerr << "parse error #" << errorCount << ": expected " << X << ", got " << a
+                          << " (lexeme='" << (ip < toks.size() ? toks[ip].lexeme : "") << "')" << std::endl;
+                stk.pop_back();
+                collectors.clear();
             }
             continue;
         }
 
-        // 非终结符：查表
         auto rowIt = t.table.find(X);
         if (rowIt == t.table.end() || rowIt->second.find(a) == rowIt->second.end()) {
-            // compute expected symbols for better debugging
-            std::string expected;
-            auto itRow = t.table.find(X);
-            if (itRow != t.table.end()) {
-                expected = "{";
-                bool firstE = true;
-                for (auto& kv : itRow->second) {
-                    if (!firstE) expected += ", ";
-                    expected += kv.first;
-                    firstE = false;
+            errorCount++;
+            std::string currLex = (ip < toks.size()) ? toks[ip].lexeme : "$";
+            writeStep(out, stk, input, ip, std::string("ERROR: no rule for M[") + X + "," + a + "]");
+            std::cerr << "parse error #" << errorCount << ": no rule for M[" << X << "," << a
+                      << "] (lexeme='" << currLex << "')" << std::endl;
+
+            if (a == END) {
+                std::cerr << "  unexpected end of input, stopping" << std::endl;
+                break;
+            }
+
+            while (ip < input.size() && !isSyncToken(input[ip]))
+                ip++;
+            while (!stk.empty() && stk.back() != END) {
+                std::string top = stk.back();
+                stk.pop_back();
+                if (isNonTerminalSym(g, top)) {
+                    auto rit = t.table.find(top);
+                    if (rit != t.table.end() && rit->second.count(ip < input.size() ? input[ip] : END)) {
+                        stk.push_back(top);
+                        break;
+                    }
                 }
-                expected += "}";
-            } else {
-                expected = "(no row)";
+                if (top == "SEMI" || top == "RBRACE") {
+                    stk.push_back(top);
+                    break;
+                }
             }
-
-            std::string currLex = "";
-            if (ip < toks.size()) currLex = toks[ip].lexeme;
-
-            // include FIRST/FOLLOW hints if available
-            std::string hints;
-            auto itFirst = t.first.find(X);
-            if (itFirst != t.first.end()) {
-                hints += " FIRST={";
-                bool f = true;
-                for (auto& s : itFirst->second) { if (!f) hints += ", "; hints += s; f = false; }
-                hints += "}";
-            }
-            auto itFollow = t.follow.find(X);
-            if (itFollow != t.follow.end()) {
-                hints += " FOLLOW={";
-                bool f = true;
-                for (auto& s : itFollow->second) { if (!f) hints += ", "; hints += s; f = false; }
-                hints += "}";
-            }
-
-            writeStep(out, stk, input, ip, std::string("ERROR: no rule for M[") + X + "," + a + "] (expected " + expected + ")");
-            std::cerr << "parse error: no rule for M[" << X << "," << a << "]" << std::endl;
-            std::cerr << "  current token lexeme: '" << currLex << "'" << std::endl;
-            std::cerr << "  expected: " << expected << std::endl;
-            if (!hints.empty()) std::cerr << "  hints:" << hints << std::endl;
-            return 2;
+            collectors.clear();
+            writeStep(out, stk, input, ip, "PANIC RECOVERY");
+            continue;
         }
 
         int prodIndex = rowIt->second.at(a);
@@ -186,9 +181,8 @@ int main() {
         }
 
         const auto& pr = g.prods[prodIndex];
-        stk.pop_back(); // pop X
+        stk.pop_back();
 
-        // if epsilon production, create node immediately
         if (pr.rhs.size() == 1 && pr.rhs[0] == EPS) {
             ASTNode* p = new ASTNode(pr.lhs, false);
             if (!collectors.empty()) {
@@ -214,13 +208,10 @@ int main() {
             continue;
         }
 
-        // push a collector to gather RHS children, then push RHS symbols (in reverse)
         Collector col; col.parent = pr.lhs; col.remaining = (int)pr.rhs.size(); col.children.clear();
         collectors.push_back(col);
-        if (!(pr.rhs.size() == 1 && pr.rhs[0] == EPS)) {
-            for (int i = (int)pr.rhs.size() - 1; i >= 0; i--) {
-                stk.push_back(pr.rhs[i]);
-            }
+        for (int i = (int)pr.rhs.size() - 1; i >= 0; i--) {
+            stk.push_back(pr.rhs[i]);
         }
 
         std::string action = pr.lhs + " ->";
@@ -282,6 +273,12 @@ int main() {
 
         if (root) writeJson(root);
         jsonOut.close();
+    }
+
+    if (errorCount > 0) {
+        std::cout << "ACCEPT (with " << errorCount << " error(s))" << std::endl;
+    } else {
+        std::cout << "ACCEPT" << std::endl;
     }
 
     return 0;
