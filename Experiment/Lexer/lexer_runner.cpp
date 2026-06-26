@@ -34,7 +34,8 @@ static bool writeTokens(const std::string& path, const std::vector<Token>& token
 }
 
 static bool isSkipToken(const std::string& tokenType) {
-    return tokenType == "WS" || tokenType == "COMMENT";
+    return tokenType == "WS" || tokenType == "COMMENT" || tokenType == "PREPROC" ||
+           tokenType == "LINE_COMMENT" || tokenType == "BLOCK_COMMENT";
 }
 
 static int stepDFA(const DFA& dfa, int state, char c) {

@@ -1,24 +1,62 @@
-# LL(1) 文法：支持赋值 / 表达式 / 控制流(if-else/while) / 块 / return
+# LL(1) 文法：支持函数定义 / 类型声明 / 表达式 / 控制流 / 块 / return
 # 终结符名须与词法分析器输出的 token type 一致
 # 运算符优先级：== != > < >= <= (最低) < + - < * / < ^ < 一元 - (最高)
-# 非终结符：S StmtList Stmt ElseOpt StmtTail Expr Expr' Comp Comp' Term Term' Power PowerRest Factor
 
+S -> INT_KW ID LPAREN RPAREN Block
 S -> StmtList
 
-StmtList -> Stmt StmtList | eps
+Block -> LBRACE StmtList RBRACE
 
-Stmt -> ID StmtTail SEMI | IF LPAREN Expr RPAREN Stmt ElseOpt | WHILE LPAREN Expr RPAREN Stmt | LBRACE StmtList RBRACE | RETURN Expr SEMI | SEMI
+StmtList -> Stmt StmtList
+StmtList -> eps
 
-ElseOpt -> ELSE Stmt | eps
+Stmt -> INT_KW ID DeclRest SEMI
+Stmt -> ID StmtTail SEMI
+Stmt -> IF LPAREN Expr RPAREN Stmt ElseOpt
+Stmt -> WHILE LPAREN Expr RPAREN Stmt
+Stmt -> LBRACE StmtList RBRACE
+Stmt -> RETURN Expr SEMI
+Stmt -> SEMI
 
-StmtTail -> ASSIGN Expr | Term' Comp' Expr'
+DeclRest -> ASSIGN Expr
+DeclRest -> eps
+
+ElseOpt -> ELSE Stmt
+ElseOpt -> eps
+
+StmtTail -> ASSIGN Expr
+StmtTail -> LPAREN Args RPAREN
+StmtTail -> Term' Comp' Expr'
 
 Expr   -> Comp Expr'
-Expr'  -> EQ Comp Expr' | NE Comp Expr' | LT Comp Expr' | GT Comp Expr' | LE Comp Expr' | GE Comp Expr' | eps
+Expr'  -> EQ Comp Expr'
+Expr'  -> NE Comp Expr'
+Expr'  -> LT Comp Expr'
+Expr'  -> GT Comp Expr'
+Expr'  -> LE Comp Expr'
+Expr'  -> GE Comp Expr'
+Expr'  -> eps
 Comp   -> Term Comp'
-Comp'  -> PLUS Term Comp' | MINUS Term Comp' | eps
+Comp'  -> PLUS Term Comp'
+Comp'  -> MINUS Term Comp'
+Comp'  -> eps
 Term   -> Power Term'
-Term'  -> MUL Power Term' | DIV Power Term' | eps
+Term'  -> MUL Power Term'
+Term'  -> DIV Power Term'
+Term'  -> eps
 Power  -> Factor PowerRest
-PowerRest -> POW Power | eps
-Factor -> LPAREN Expr RPAREN | ID | INT | MINUS Factor
+PowerRest -> POW Power
+PowerRest -> eps
+Factor -> LPAREN Expr RPAREN
+Factor -> ID FactorRest
+Factor -> INT
+Factor -> STRING
+Factor -> MINUS Factor
+
+FactorRest -> LPAREN Args RPAREN
+FactorRest -> eps
+
+Args -> Expr ArgTail
+Args -> eps
+ArgTail -> COMMA Expr ArgTail
+ArgTail -> eps

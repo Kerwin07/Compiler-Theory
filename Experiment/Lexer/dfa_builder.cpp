@@ -30,7 +30,7 @@ static std::vector<Rule> readRules(const std::string& path) {
     std::string line;
     while (std::getline(fin, line)) {
         auto p = line.find('#');
-        if (p != std::string::npos) line = line.substr(0, p);
+        if (p == 0) line.clear();
 
         auto isSpace = [](unsigned char ch){ return std::isspace(ch); };
         while (!line.empty() && isSpace((unsigned char)line.back())) line.pop_back();

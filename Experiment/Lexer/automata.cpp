@@ -6,15 +6,20 @@
 // 将 DFA trans 的字符序列化为可见、安全的单词 token，避免空白/换行破坏 mindfa 文本格式。
 static std::string escapeChar(unsigned char c) {
     switch (c) {
-        case ' ': return "\\s";   // space
+        case ' ': return "\\s";
         case '\t': return "\\t";
         case '\n': return "\\n";
         case '\r': return "\\r";
         case '\\': return "\\\\";
         default:
-            // 其他字符直接输出（假设为可见 ASCII 或至少不会破坏一行）
-            return std::string(1, (char)c);
+            break;
     }
+    if (c < 0x20 || c >= 0x7F) {
+        char buf[8];
+        std::snprintf(buf, sizeof(buf), "\\x%02X", (unsigned)c);
+        return buf;
+    }
+    return std::string(1, (char)c);
 }
 
 static bool unescapeCharToken(const std::string& tok, char& out) {
@@ -28,6 +33,19 @@ static bool unescapeCharToken(const std::string& tok, char& out) {
     if (tok == "\\n") { out = '\n'; return true; }
     if (tok == "\\r") { out = '\r'; return true; }
     if (tok == "\\\\") { out = '\\'; return true; }
+    if (tok.size() == 4 && tok[0] == '\\' && tok[1] == 'x') {
+        unsigned val = 0;
+        for (int i = 2; i < 4; ++i) {
+            char ch = tok[i];
+            val <<= 4;
+            if (ch >= '0' && ch <= '9') val |= (ch - '0');
+            else if (ch >= 'A' && ch <= 'F') val |= (ch - 'A' + 10);
+            else if (ch >= 'a' && ch <= 'f') val |= (ch - 'a' + 10);
+            else return false;
+        }
+        out = (char)val;
+        return true;
+    }
     return false;
 }
 
@@ -80,7 +98,6 @@ bool loadMindfa(const std::string& path, DFA& dfa) {
             ss >> from >> cTok >> to;
             char c;
             if (!unescapeCharToken(cTok, c)) {
-                // 兼容旧格式：如果某些 trans 行仍是单字符但读取异常，直接跳过
                 continue;
             }
             dfa.trans[{from, c}] = to;

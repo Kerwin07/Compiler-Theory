@@ -1,39 +1,84 @@
-# 规则优先级：越靠前优先级越高（用于关键字覆盖 ID）
-# 正则支持：() | *  连接(隐式)  转义(\n \t \r \\ \+ \* \( \) \[ \] ...)  字符类([a-z]、[0-9]、[^\n])  预定义类(\d \w \s)
+# ============================================================
+# 词法规则文件 — C++ 语言
+# 优先级：越靠前越高；最长匹配自动处理长度歧义
+# ============================================================
 
-# --- skip ---
-WS      [ \t\n]+ 
-# COMMENT /\*[^\0]*\*/
+# --- Skip tokens ---
+WS              [ \t\n]+
+LINE_COMMENT    //[^\n]*
+BLOCK_COMMENT   /\*([^*]|\*+[^/*])*\*+/
+PREPROC         #[^\n]*
 
-# --- keywords ---
-IF      if
-ELSE    else
-WHILE   while
-INT_KW  int
-RETURN  return
+# --- 控制流关键字 ---
+IF              if
+ELSE            else
+SWITCH          switch
+CASE            case
+DEFAULT         default
+BREAK           break
+CONTINUE        continue
+RETURN          return
+DO              do
+WHILE           while
+FOR             for
 
-# --- identifiers & numbers ---
-ID      [A-Za-z_][A-Za-z0-9_]*
-INT     [0-9][0-9]*
+# --- 类型关键字 ---
+INT_KW          int
+FLOAT_KW        float
+DOUBLE_KW       double
+CHAR_KW         char
+VOID_KW         void
+BOOL_KW         bool
 
-# --- operators ---
-EQ      ==
-NE      !=
-GE      >=
-LE      <=
-ASSIGN  =
-PLUS    \+
-MINUS   -
-MUL     \*
-DIV     /
-POW     \^
-GT      >
-LT      <
+# --- 修饰符 ---
+CONST           const
+STATIC          static
 
-# --- delimiters ---
-LPAREN  \(
-RPAREN  \)
-LBRACE  \{
-RBRACE  \}
-SEMI    ;
-COMMA   ,
+# --- 复合类型 ---
+CLASS           class
+STRUCT          struct
+ENUM            enum
+
+# --- 访问控制 ---
+PUBLIC          public
+PRIVATE         private
+
+# --- 字面量关键字 ---
+TRUE            true
+FALSE           false
+
+# --- 字面量 ---
+STRING          \"[^\"]*\"
+CHAR_LIT        \'[^\']*\'
+
+# --- 标识符 & 数字 ---
+ID              [A-Za-z_][A-Za-z0-9_]*
+INT             [0-9][0-9]*
+
+# --- 运算符 ---
+LE              <=
+GE              >=
+EQ              ==
+NE              \!=
+LOG_AND         &&
+LOG_OR          \|\|
+INC             \+\+
+DEC             --
+
+# --- 分隔符 ---
+LPAREN          \(
+RPAREN          \)
+LBRACE          \{
+RBRACE          \}
+SEMI            ;
+COMMA           ,
+
+# --- 单字符运算符 ---
+POW             \^
+PLUS            \+
+MINUS           -
+MUL             \*
+DIV             /
+ASSIGN          =
+LT              <
+GT              >

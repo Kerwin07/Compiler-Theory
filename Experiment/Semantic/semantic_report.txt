@@ -2,23 +2,43 @@ SEMANTIC ANALYSIS REPORT
 ========================
 
 == Info ==
-[INFO]    defined variable 'x' (type=int, value=5) at Stmt#1
-[INFO]    defined variable 'y' (type=int, value=10) at Stmt#2
-[INFO]    defined variable 'z' (type=int, value=8) at Stmt#3
-[INFO]    defined variable 'w' (type=int, value=85) at Stmt#4
-[INFO]    defined variable 'r' (type=int, value=25) at Stmt#7
-[INFO]    reassigned variable 'r' = 26 at Stmt#8
-[INFO]    reassigned variable 'x' = 6 at Stmt#11
-[INFO]    RETURN value = 85 [type=int] at Stmt#12
+[INFO]    defined variable 'a' (type=int, value=10) at Stmt#2
+[INFO]    defined variable 'b' (type=int, value=3) at Stmt#3
+[INFO]    defined variable 'c' (type=int, value=16) at Stmt#4
+[INFO]    defined variable 'd' (type=int, value=11) at Stmt#5
+[INFO]    defined variable 'e' (type=int, value=16) at Stmt#6
+[INFO]    defined variable 'f' (type=int, value=-10) at Stmt#7
+[INFO]    defined variable 'g' (type=int, value=30) at Stmt#8
+[INFO]    defined variable 'h' (type=int, value=3) at Stmt#9
+[INFO]    defined variable 'i' (type=int, value=1) at Stmt#34
+[INFO]    reassigned variable 'i' = 2 at Stmt#38
+[INFO]    defined variable 'xxx' (type=int, value=0) at Stmt#39
+[INFO]    reassigned variable 'xxx' = 0 at Stmt#41
+[INFO]    defined variable 'yyy' (type=int, value=0) at Stmt#43
+[INFO]    RETURN value = 0 [type=int] at Stmt#44
 
 == Warnings ==
+[WARNING] variable 'scanf' used before assignment at Stmt#41
+[WARNING] variable 'd' assigned but never used
+[WARNING] variable 'e' assigned but never used
+[WARNING] variable 'f' assigned but never used
+[WARNING] variable 'g' assigned but never used
+[WARNING] variable 'h' assigned but never used
+[WARNING] variable 'yyy' assigned but never used
 
 == Errors ==
+[ERROR]   Stmt#43: division by zero
 
 SYMBOL TABLE
 ============
-r  type=int  value=26  defined=true   used=true   definedAt=#7  usedAt=#8
-w  type=int  value=85  defined=true   used=true   definedAt=#4  usedAt=#12
-x  type=int  value=6  defined=true   used=true   definedAt=#1  usedAt=#11
-y  type=int  value=10  defined=true   used=true   definedAt=#2  usedAt=#7
-z  type=int  value=8  defined=true   used=true   definedAt=#3  usedAt=#4
+a  type=int  value=10  defined=true   used=true   definedAt=#2  usedAt=#28
+b  type=int  value=3  defined=true   used=true   definedAt=#3  usedAt=#31
+c  type=int  value=16  defined=true   used=true   definedAt=#4  usedAt=#5
+d  type=int  value=11  defined=true   used=false  definedAt=#5  usedAt=#0
+e  type=int  value=16  defined=true   used=false  definedAt=#6  usedAt=#0
+f  type=int  value=-10  defined=true   used=false  definedAt=#7  usedAt=#0
+g  type=int  value=30  defined=true   used=false  definedAt=#8  usedAt=#0
+h  type=int  value=3  defined=true   used=false  definedAt=#9  usedAt=#0
+i  type=int  value=2  defined=true   used=true   definedAt=#34  usedAt=#38
+xxx  type=int  value=0  defined=true   used=true   definedAt=#39  usedAt=#43
+yyy  type=int  value=0  defined=true   used=false  definedAt=#43  usedAt=#0

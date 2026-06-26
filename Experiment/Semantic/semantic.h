@@ -50,6 +50,19 @@ struct SymbolEntry {
 struct Scope {
     std::map<std::string, SymbolEntry> symbols;
     Scope* parent = nullptr;
+
+    SymbolEntry* lookup(const std::string& name) {
+        auto it = symbols.find(name);
+        if (it != symbols.end()) return &it->second;
+        if (parent) return parent->lookup(name);
+        return nullptr;
+    }
+
+    SymbolEntry* lookupLocal(const std::string& name) {
+        auto it = symbols.find(name);
+        if (it != symbols.end()) return &it->second;
+        return nullptr;
+    }
 };
 
 struct SemanticResult {

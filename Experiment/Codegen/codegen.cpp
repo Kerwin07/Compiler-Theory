@@ -5,6 +5,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <functional>
+#include <vector>
 
 // ============================================================
 // JSON AST 解析（与 semantic 共用相同格式）
@@ -125,10 +126,81 @@ void Env::set(const std::string& name, int val) {
 }
 
 // ============================================================
-// 表达式求值（递归遍历AST，利用文法编码的优先级）
+// ============================================================
+// 内置函数 printf / scanf
 // ============================================================
 
 static int evalExpr(ASTNode* node, Env& env);
+
+static std::vector<int> evalArgs(ASTNode* argsNode, Env& env) {
+    std::vector<int> vals;
+    if (!argsNode || argsNode->children.empty()) return vals;
+    ASTNode* expr = argsNode->children[0]; // Args -> Expr ArgTail
+    vals.push_back(evalExpr(expr, env));
+    ASTNode* tail = (argsNode->children.size() >= 2) ? argsNode->children[1] : nullptr;
+    while (tail && !tail->children.empty() && tail->sym == "ArgTail") {
+        expr = tail->children[1]; // ArgTail -> COMMA Expr ArgTail
+        vals.push_back(evalExpr(expr, env));
+        tail = (tail->children.size() >= 3) ? tail->children[2] : nullptr;
+    }
+    return vals;
+}
+
+static int builtinCall(const std::string& name, ASTNode* argsNode, Env& env) {
+    if (name == "printf") {
+        bool first = true;
+        ASTNode* cur = argsNode;
+        while (cur && !cur->children.empty() && (cur->sym == "Args" || cur->sym == "ArgTail")) {
+            ASTNode* expr;
+            if (cur->sym == "Args") {
+                expr = cur->children[0]; // Args -> Expr ArgTail
+            } else {
+                expr = cur->children[1]; // ArgTail -> COMMA Expr ArgTail
+            }
+            if (!first) std::cout << " ";
+            first = false;
+            // 检查是否为字符串字面量：遍历到 Factor → STRING
+            {
+                ASTNode* f = expr;
+                // Expr → Comp Expr'
+                if (f->sym == "Expr" && f->children.size() >= 1) f = f->children[0];
+                // Comp → Term Comp'
+                if (f->sym == "Comp" && f->children.size() >= 1) f = f->children[0];
+                // Term → Power Term'
+                if (f->sym == "Term" && f->children.size() >= 1) f = f->children[0];
+                // Power → Factor PowerRest
+                if (f->sym == "Power" && f->children.size() >= 1) f = f->children[0];
+                // Factor → STRING
+                if (f->sym == "Factor" && f->children.size() >= 1 &&
+                    f->children[0]->isToken && f->children[0]->sym == "STRING") {
+                    std::string s = f->children[0]->lexeme;
+                    if (s.size() >= 2 && s.front() == '"' && s.back() == '"')
+                        std::cout << s.substr(1, s.size() - 2);
+                    else
+                        std::cout << s;
+                    goto next_arg;
+                }
+            }
+            std::cout << evalExpr(expr, env);
+            next_arg:;
+            if (cur->sym == "Args" && cur->children.size() >= 2)
+                cur = cur->children[1]; // ArgTail
+            else if (cur->sym == "ArgTail" && cur->children.size() >= 3)
+                cur = cur->children[2]; // next ArgTail
+            else
+                cur = nullptr;
+        }
+        std::cout << std::endl;
+        return 0;
+    }
+    if (name == "scanf") {
+        int val = 0;
+        std::cin >> val;
+        return val;
+    }
+    std::cerr << "undefined function: " << name << std::endl;
+    return 0;
+}
 
 static int evalFactor(ASTNode* node, Env& env) {
     if (!node) throw std::runtime_error("null Factor");
@@ -137,11 +209,21 @@ static int evalFactor(ASTNode* node, Env& env) {
         if (node->children[0]->isToken && node->children[0]->sym == "MINUS") {
             return -evalFactor(node->children[1], env);
         }
+        // Factor -> ID FactorRest
+        if (node->children.size() >= 2 && node->children[1]->sym == "FactorRest") {
+            ASTNode* rest = node->children[1];
+            if (!rest->children.empty() && rest->children[0]->sym == "LPAREN") {
+                std::string funcName = node->children[0]->lexeme;
+                ASTNode* argsNode = rest->children[1]; // Args
+                return builtinCall(funcName, argsNode, env);
+            }
+        }
         return evalFactor(node->children[0], env);
     }
     if (node->isToken) {
         if (node->sym == "ID") return env.get(node->lexeme);
         if (node->sym == "INT") return std::stoi(node->lexeme);
+        if (node->sym == "STRING") return 0;
         throw std::runtime_error("unexpected token in Factor: " + node->sym);
     }
     if (node->sym == "LPAREN") {
@@ -304,7 +386,13 @@ static ExecResult execStmt(ASTNode* node, Env& env, std::ostream& trace) {
     if (first == "ID") {
         ASTNode* tail = node->children[1];
         if (tail->sym == "StmtTail") {
-            if (!tail->children.empty() && tail->children[0]->sym == "ASSIGN") {
+            if (!tail->children.empty() && tail->children[0]->sym == "LPAREN") {
+                // 函数调用语句: ID ( Args ) ;
+                std::string funcName = node->children[0]->lexeme;
+                ASTNode* argsNode = tail->children[1]; // Args
+                trace << "  call " << funcName << "\n";
+                builtinCall(funcName, argsNode, env);
+            } else if (!tail->children.empty() && tail->children[0]->sym == "ASSIGN") {
                 // 赋值: ID = Expr
                 std::string var = node->children[0]->lexeme;
                 int val = evalExpr(tail->children[1], env);
@@ -349,6 +437,19 @@ static ExecResult execStmt(ASTNode* node, Env& env, std::ostream& trace) {
         return r;
     }
 
+    if (first == "INT_KW") {
+        // typed declaration: int x; or int x = Expr;
+        std::string var = node->children[1]->lexeme;
+        ASTNode* declRest = node->children[2];
+        int val = 0;
+        if (!declRest->children.empty() && declRest->children[0]->sym == "ASSIGN") {
+            val = evalExpr(declRest->children[1], env);
+        }
+        env.set(var, val);
+        trace << "  int " << var << " = " << val << "\n";
+        return r;
+    }
+
     if (first == "LBRACE") {
         // LBRACE StmtList RBRACE -> StmtList is child[1]
         bool ret = false;
@@ -387,17 +488,39 @@ int executeProgram(ASTNode* root) {
 
     out << "=== Execution Trace ===\n";
 
-    // root is S -> StmtList
-    if (!root->children.empty()) {
-        ASTNode* stmtList = root->children[0];
-        bool ret = false;
-        int rv = 0;
-        execStmtList(stmtList, env, ret, rv, out);
-        if (ret) {
-            out << "Program returned: " << rv << "\n";
-            std::cout << "Program returned: " << rv << std::endl;
-            return rv;
+    if (root->children.empty()) return 0;
+
+    const std::string& first = root->children[0]->sym;
+
+    if (first == "INT_KW") {
+        // FuncDef: INT_KW ID LPAREN RPAREN Block
+        // Block is children[4]; Block -> LBRACE StmtList RBRACE
+        ASTNode* block = root->children[4];
+        if (block && block->children.size() >= 2) {
+            ASTNode* stmtList = block->children[1];
+            bool ret = false;
+            int rv = 0;
+            execStmtList(stmtList, env, ret, rv, out);
+            if (ret) {
+                out << "Program returned: " << rv << "\n";
+                std::cout << "Program returned: " << rv << std::endl;
+                return rv;
+            }
         }
+        out << "Program returned: 0\n";
+        std::cout << "Program returned: 0" << std::endl;
+        return 0;
+    }
+
+    // root is S -> StmtList
+    ASTNode* stmtList = root->children[0];
+    bool ret = false;
+    int rv = 0;
+    execStmtList(stmtList, env, ret, rv, out);
+    if (ret) {
+        out << "Program returned: " << rv << "\n";
+        std::cout << "Program returned: " << rv << std::endl;
+        return rv;
     }
 
     out << "Program finished (no return)\n";

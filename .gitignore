@@ -46,7 +46,12 @@ dfa
 Experiment/Lexer/mindfa
 Experiment/Lexer/dfa
 
-# Generated report/log files (keep source ones)
-# Uncomment if needed:
-# *.txt
-# *.json
+# Generated intermediate / output files
+Experiment/Lexer/source_token.txt
+Experiment/Parser/ll_table.txt
+Experiment/Parser/ast.json
+Experiment/Parser/ast.txt
+Experiment/Parser/parse_steps.txt
+Experiment/Semantic/semantic_report.txt
+Experiment/Codegen/execution_trace.txt
+Experiment/Lexer/execution_trace.txt

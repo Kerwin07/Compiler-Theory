@@ -3,7 +3,7 @@
 #include <fstream>
 #include <iostream>
 #include <sstream>
-#include <stack>
+#include <deque>
 #include <functional>
 #include <stdexcept>
 #include <cmath>
@@ -154,23 +154,23 @@ ASTNode* loadAST(const std::string& path) {
 // ============================================================
 
 static EvalResult evalFactor(ASTNode* node,
-                             const std::map<std::string, SymbolEntry>& symbols,
+                             Scope& scope,
                              std::vector<std::string>& diag);
 
 static EvalResult evalPower(ASTNode* node,
-                            const std::map<std::string, SymbolEntry>& symbols,
+                            Scope& scope,
                             std::vector<std::string>& diag);
 
 static EvalResult evalTerm(ASTNode* node,
-                           const std::map<std::string, SymbolEntry>& symbols,
+                           Scope& scope,
                            std::vector<std::string>& diag);
 
 static EvalResult evalComp(ASTNode* node,
-                           const std::map<std::string, SymbolEntry>& symbols,
+                           Scope& scope,
                            std::vector<std::string>& diag);
 
 static EvalResult evalExprInternal(ASTNode* node,
-                                   const std::map<std::string, SymbolEntry>& symbols,
+                                   Scope& scope,
                                    std::vector<std::string>& diag);
 
 static EvalResult promoteToFloat(const EvalResult& v) {
@@ -203,11 +203,11 @@ static EvalResult makeBool(bool val) {
 }
 
 static EvalResult evalFactor(ASTNode* node,
-                             const std::map<std::string, SymbolEntry>& symbols,
+                             Scope& scope,
                              std::vector<std::string>& diag) {
     if (!node) {
         diag.push_back("null node in Factor");
-        return {}; // TY_ERROR
+        return {};
     }
 
     if (node->sym == "Factor") {
@@ -216,27 +216,35 @@ static EvalResult evalFactor(ASTNode* node,
             return {};
         }
         if (node->children[0]->isToken && node->children[0]->sym == "MINUS") {
-            EvalResult inner = evalFactor(node->children[1], symbols, diag);
+            EvalResult inner = evalFactor(node->children[1], scope, diag);
             if (inner.type == VarType::TY_ERROR) return {};
             EvalResult r = inner;
             r.intVal = -inner.intVal;
             r.floatVal = -inner.floatVal;
             return r;
         }
-        return evalFactor(node->children[0], symbols, diag);
+        if (node->children.size() >= 2 && node->children[1]->sym == "FactorRest") {
+            ASTNode* rest = node->children[1];
+            if (!rest->children.empty() && rest->children[0]->sym == "LPAREN") {
+                EvalResult r;
+                r.type = VarType::TY_INT;
+                return r;
+            }
+        }
+        return evalFactor(node->children[0], scope, diag);
     }
 
     if (node->isToken) {
         if (node->sym == "ID") {
-            auto it = symbols.find(node->lexeme);
-            if (it == symbols.end() || !it->second.defined) {
+            const SymbolEntry* entry = scope.lookup(node->lexeme);
+            if (!entry || !entry->defined) {
                 diag.push_back("undefined variable '" + node->lexeme + "' in expression");
                 return {};
             }
             EvalResult r;
-            r.type = it->second.type;
-            r.intVal = it->second.value;
-            r.floatVal = (double)it->second.value;
+            r.type = entry->type;
+            r.intVal = entry->value;
+            r.floatVal = (double)entry->value;
             return r;
         }
         if (node->sym == "INT") {
@@ -262,7 +270,7 @@ static EvalResult evalFactor(ASTNode* node,
             diag.push_back("empty paren");
             return {};
         }
-        return evalExprInternal(node->children[0], symbols, diag);
+        return evalExprInternal(node->children[0], scope, diag);
     }
 
     diag.push_back("unexpected node in Factor: " + node->sym);
@@ -270,16 +278,16 @@ static EvalResult evalFactor(ASTNode* node,
 }
 
 static EvalResult evalPower(ASTNode* node,
-                            const std::map<std::string, SymbolEntry>& symbols,
+                            Scope& scope,
                             std::vector<std::string>& diag) {
     if (!node) { diag.push_back("null Power"); return {}; }
 
     if (node->sym == "Power") {
-        EvalResult val = evalFactor(node->children[0], symbols, diag);
+        EvalResult val = evalFactor(node->children[0], scope, diag);
         if (node->children.size() >= 2) {
             ASTNode* rest = node->children[1];
             if (!rest->children.empty() && rest->children[0]->sym == "POW") {
-                EvalResult right = evalPower(rest->children[1], symbols, diag);
+                EvalResult right = evalPower(rest->children[1], scope, diag);
                 if (val.type == VarType::TY_ERROR || right.type == VarType::TY_ERROR) return {};
 
                 double base = (val.type == VarType::TY_FLOAT) ? val.floatVal : (double)val.intVal;
@@ -302,19 +310,18 @@ static EvalResult evalPower(ASTNode* node,
         return val;
     }
 
-    return evalFactor(node, symbols, diag);
+    return evalFactor(node, scope, diag);
 }
 
 static EvalResult evalTerm(ASTNode* node,
-                           const std::map<std::string, SymbolEntry>& symbols,
+                           Scope& scope,
                            std::vector<std::string>& diag) {
-    // Term -> Power Term'
-    EvalResult val = evalPower(node->children[0], symbols, diag);
+    EvalResult val = evalPower(node->children[0], scope, diag);
     ASTNode* tprime = (node->children.size() >= 2) ? node->children[1] : nullptr;
 
     while (tprime && !tprime->children.empty() && tprime->sym == "Term'") {
         if (tprime->children[0]->sym == "MUL") {
-            EvalResult rhs = evalPower(tprime->children[1], symbols, diag);
+            EvalResult rhs = evalPower(tprime->children[1], scope, diag);
             if (val.type == VarType::TY_ERROR || rhs.type == VarType::TY_ERROR) return {};
             VarType restype = resultType(val.type, rhs.type, "*");
             if (restype == VarType::TY_FLOAT) {
@@ -328,7 +335,7 @@ static EvalResult evalTerm(ASTNode* node,
             }
             val.type = restype;
         } else if (tprime->children[0]->sym == "DIV") {
-            EvalResult rhs = evalPower(tprime->children[1], symbols, diag);
+            EvalResult rhs = evalPower(tprime->children[1], scope, diag);
             if (val.type == VarType::TY_ERROR || rhs.type == VarType::TY_ERROR) return {};
             int rhsInt = rhs.intVal;
             double rhsFloat = rhs.floatVal;
@@ -351,15 +358,14 @@ static EvalResult evalTerm(ASTNode* node,
 }
 
 static EvalResult evalComp(ASTNode* node,
-                           const std::map<std::string, SymbolEntry>& symbols,
+                           Scope& scope,
                            std::vector<std::string>& diag) {
-    // Comp -> Term Comp'
-    EvalResult val = evalTerm(node->children[0], symbols, diag);
+    EvalResult val = evalTerm(node->children[0], scope, diag);
     ASTNode* cprime = (node->children.size() >= 2) ? node->children[1] : nullptr;
 
     while (cprime && !cprime->children.empty() && cprime->sym == "Comp'") {
         if (cprime->children[0]->sym == "PLUS") {
-            EvalResult rhs = evalTerm(cprime->children[1], symbols, diag);
+            EvalResult rhs = evalTerm(cprime->children[1], scope, diag);
             if (val.type == VarType::TY_ERROR || rhs.type == VarType::TY_ERROR) return {};
             VarType restype = resultType(val.type, rhs.type, "+");
             if (restype == VarType::TY_FLOAT) {
@@ -373,7 +379,7 @@ static EvalResult evalComp(ASTNode* node,
             }
             val.type = restype;
         } else if (cprime->children[0]->sym == "MINUS") {
-            EvalResult rhs = evalTerm(cprime->children[1], symbols, diag);
+            EvalResult rhs = evalTerm(cprime->children[1], scope, diag);
             if (val.type == VarType::TY_ERROR || rhs.type == VarType::TY_ERROR) return {};
             VarType restype = resultType(val.type, rhs.type, "-");
             if (restype == VarType::TY_FLOAT) {
@@ -395,15 +401,14 @@ static EvalResult evalComp(ASTNode* node,
 }
 
 static EvalResult evalExprInternal(ASTNode* node,
-                                   const std::map<std::string, SymbolEntry>& symbols,
+                                   Scope& scope,
                                    std::vector<std::string>& diag) {
-    // Expr -> Comp Expr'
-    EvalResult val = evalComp(node->children[0], symbols, diag);
+    EvalResult val = evalComp(node->children[0], scope, diag);
     ASTNode* eprime = (node->children.size() >= 2) ? node->children[1] : nullptr;
 
     while (eprime && !eprime->children.empty() && eprime->sym == "Expr'") {
         const std::string& op = eprime->children[0]->sym;
-        EvalResult rhs = evalComp(eprime->children[1], symbols, diag);
+        EvalResult rhs = evalComp(eprime->children[1], scope, diag);
         if (val.type == VarType::TY_ERROR || rhs.type == VarType::TY_ERROR) return {};
 
         double va = (val.type == VarType::TY_FLOAT) ? val.floatVal : (double)val.intVal;
@@ -427,7 +432,11 @@ static EvalResult evalExprInternal(ASTNode* node,
 EvalResult evalExpr(ASTNode* expr,
                     const std::map<std::string, SymbolEntry>& symbols,
                     std::vector<std::string>& diag) {
-    return evalExprInternal(expr, symbols, diag);
+    Scope tempScope;
+    for (auto& kv : symbols) {
+        tempScope.symbols[kv.first] = kv.second;
+    }
+    return evalExprInternal(expr, tempScope, diag);
 }
 
 // ============================================================
@@ -435,18 +444,18 @@ EvalResult evalExpr(ASTNode* expr,
 // ============================================================
 
 static EvalResult evalStmtTailExpr(ASTNode* tail, const std::string& idName,
-                                   const std::map<std::string, SymbolEntry>& symbols,
+                                   Scope& scope,
                                    std::vector<std::string>& diag) {
-    auto it = symbols.find(idName);
-    if (it == symbols.end() || !it->second.defined) {
+    const SymbolEntry* entry = scope.lookup(idName);
+    if (!entry || !entry->defined) {
         diag.push_back("undefined variable '" + idName + "' in expression");
         return {};
     }
 
     EvalResult val;
-    val.type = it->second.type;
-    val.intVal = it->second.value;
-    val.floatVal = (double)it->second.value;
+    val.type = entry->type;
+    val.intVal = entry->value;
+    val.floatVal = (double)entry->value;
 
     ASTNode* tprime = nullptr;
     ASTNode* cprime = nullptr;
@@ -460,7 +469,7 @@ static EvalResult evalStmtTailExpr(ASTNode* tail, const std::string& idName,
 
     while (tprime && !tprime->children.empty()) {
         if (tprime->children[0]->sym == "MUL") {
-            EvalResult rhs = evalPower(tprime->children[1], symbols, diag);
+            EvalResult rhs = evalPower(tprime->children[1], scope, diag);
             if (val.type == VarType::TY_ERROR || rhs.type == VarType::TY_ERROR) return {};
             VarType restype = resultType(val.type, rhs.type, "*");
             if (restype == VarType::TY_FLOAT) {
@@ -474,7 +483,7 @@ static EvalResult evalStmtTailExpr(ASTNode* tail, const std::string& idName,
             }
             val.type = restype;
         } else if (tprime->children[0]->sym == "DIV") {
-            EvalResult rhs = evalPower(tprime->children[1], symbols, diag);
+            EvalResult rhs = evalPower(tprime->children[1], scope, diag);
             if (val.type == VarType::TY_ERROR || rhs.type == VarType::TY_ERROR) return {};
             if (rhs.floatVal == 0.0) { diag.push_back("division by zero"); return {}; }
             VarType restype = (val.type == VarType::TY_FLOAT || rhs.type == VarType::TY_FLOAT)
@@ -489,7 +498,7 @@ static EvalResult evalStmtTailExpr(ASTNode* tail, const std::string& idName,
 
     while (cprime && !cprime->children.empty()) {
         if (cprime->children[0]->sym == "PLUS") {
-            EvalResult rhs = evalTerm(cprime->children[1], symbols, diag);
+            EvalResult rhs = evalTerm(cprime->children[1], scope, diag);
             if (val.type == VarType::TY_ERROR || rhs.type == VarType::TY_ERROR) return {};
             VarType restype = resultType(val.type, rhs.type, "+");
             if (restype == VarType::TY_FLOAT) {
@@ -503,7 +512,7 @@ static EvalResult evalStmtTailExpr(ASTNode* tail, const std::string& idName,
             }
             val.type = restype;
         } else if (cprime->children[0]->sym == "MINUS") {
-            EvalResult rhs = evalTerm(cprime->children[1], symbols, diag);
+            EvalResult rhs = evalTerm(cprime->children[1], scope, diag);
             if (val.type == VarType::TY_ERROR || rhs.type == VarType::TY_ERROR) return {};
             VarType restype = resultType(val.type, rhs.type, "-");
             if (restype == VarType::TY_FLOAT) {
@@ -522,7 +531,7 @@ static EvalResult evalStmtTailExpr(ASTNode* tail, const std::string& idName,
 
     while (eprime && !eprime->children.empty()) {
         const std::string& op = eprime->children[0]->sym;
-        EvalResult rhs = evalComp(eprime->children[1], symbols, diag);
+        EvalResult rhs = evalComp(eprime->children[1], scope, diag);
         if (val.type == VarType::TY_ERROR || rhs.type == VarType::TY_ERROR) return {};
 
         double va = (val.type == VarType::TY_FLOAT) ? val.floatVal : (double)val.intVal;
@@ -579,6 +588,9 @@ bool analyzeSemantics(ASTNode* root, SemanticResult& result) {
             result.warnings.push_back(msg);
     };
 
+    std::deque<Scope> scopeStack;
+    scopeStack.push_back(Scope{}); // global scope
+
     std::function<void(ASTNode*)> walk = [&](ASTNode* node) {
         if (!node) return;
 
@@ -588,6 +600,15 @@ bool analyzeSemantics(ASTNode* root, SemanticResult& result) {
             if (node->children.empty()) { return; }
             const std::string& first = node->children[0]->sym;
 
+            bool isBlock = (first == "LBRACE");
+            if (isBlock) {
+                Scope block;
+                block.parent = &scopeStack.back();
+                scopeStack.push_back(block);
+            }
+
+            Scope& curScope = scopeStack.back();
+
             if (first == "ID" && node->children.size() >= 2 &&
                 node->children[1]->sym == "StmtTail" &&
                 !node->children[1]->children.empty() &&
@@ -595,19 +616,20 @@ bool analyzeSemantics(ASTNode* root, SemanticResult& result) {
 
                 std::string var = node->children[0]->lexeme;
                 auto* tail = node->children[1];
-                auto* expr = tail->children[1]; // ASSIGN Expr
+                auto* expr = tail->children[1];
 
-                // 求值 RHS 表达式
                 std::vector<std::string> diag;
-                EvalResult rhs = evalExpr(expr, result.globalScope.symbols, diag);
+                EvalResult rhs = evalExprInternal(expr, curScope, diag);
 
                 for (auto& d : diag) {
                     result.errors.push_back("Stmt#" + std::to_string(nodeIndex) + ": " + d);
                 }
 
-                auto* entry = &result.globalScope.symbols[var];
+                SymbolEntry* existing = curScope.lookup(var);
+                SymbolEntry* entry;
 
-                if (!entry->defined) {
+                if (!existing || !existing->defined) {
+                    entry = &curScope.symbols[var];
                     entry->name = var;
                     entry->defined = true;
                     entry->definedLine = nodeIndex;
@@ -618,6 +640,7 @@ bool analyzeSemantics(ASTNode* root, SemanticResult& result) {
                         ", value=" + std::to_string(rhs.intVal) + ") at Stmt#" +
                         std::to_string(nodeIndex));
                 } else {
+                    entry = existing;
                     VarType oldType = entry->type;
                     VarType newType = (rhs.type != VarType::TY_ERROR) ? rhs.type : VarType::TY_INT;
 
@@ -637,43 +660,51 @@ bool analyzeSemantics(ASTNode* root, SemanticResult& result) {
                         std::to_string(nodeIndex));
                 }
 
-                // 也收集 Expr 中的变量引用（已通过 evalExpr 间接检查）
                 std::vector<std::string> used;
                 collectUsedVars(expr, used);
                 for (auto& u : used) {
-                    auto* ue = &result.globalScope.symbols[u];
-                    if (!ue->defined) {
+                    SymbolEntry* ue = curScope.lookup(u);
+                    if (!ue || !ue->defined) {
                         addWarning("use_before_def_" + u + "@" + std::to_string(nodeIndex),
                             "variable '" + u + "' used before assignment at Stmt#" +
                             std::to_string(nodeIndex));
+                    } else {
+                        ue->used = true;
+                        ue->usedLine = nodeIndex;
                     }
-                    ue->used = true;
-                    ue->usedLine = nodeIndex;
                 }
             }
             else if (first == "ID") {
+                // 函数调用语句: ID ( Args ) ; — 跳过
+                if (node->children.size() >= 2 &&
+                    node->children[1]->sym == "StmtTail" &&
+                    !node->children[1]->children.empty() &&
+                    node->children[1]->children[0]->sym == "LPAREN") {
+                    // skip builtin call in semantic analysis
+                } else {
                 std::set<std::string> stmtUsed;
                 stmtUsed.insert(node->children[0]->lexeme);
                 if (node->children.size() >= 2 && node->children[1]->sym == "StmtTail") {
                     collectUsedVars(node->children[1], stmtUsed);
                 }
                 for (auto& u : stmtUsed) {
-                    auto* entry = &result.globalScope.symbols[u];
-                    if (!entry->defined) {
+                    SymbolEntry* ue = curScope.lookup(u);
+                    if (!ue || !ue->defined) {
                         addWarning("use_before_def_" + u + "@" + std::to_string(nodeIndex),
                             "variable '" + u + "' used before assignment at Stmt#" +
                             std::to_string(nodeIndex));
+                    } else {
+                        ue->used = true;
+                        ue->usedLine = nodeIndex;
+                        ue->name = u;
                     }
-                    entry->used = true;
-                    entry->usedLine = nodeIndex;
-                    entry->name = u;
                 }
 
                 if (node->children.size() >= 2 && node->children[1]->sym == "StmtTail") {
                     std::vector<std::string> diag;
                     EvalResult val = evalStmtTailExpr(node->children[1],
                                                       node->children[0]->lexeme,
-                                                      result.globalScope.symbols, diag);
+                                                      curScope, diag);
                     for (auto& d : diag)
                         result.errors.push_back("Stmt#" + std::to_string(nodeIndex) + ": " + d);
                     if (val.type != VarType::TY_ERROR) {
@@ -683,26 +714,27 @@ bool analyzeSemantics(ASTNode* root, SemanticResult& result) {
                                                "] at Stmt#" + std::to_string(nodeIndex));
                     }
                 }
+                }
             }
             else if (first == "IF") {
                 if (node->children.size() >= 3 && node->children[2]->sym == "Expr") {
                     std::set<std::string> used;
                     collectUsedVars(node->children[2], used);
                     for (auto& u : used) {
-                        auto* ue = &result.globalScope.symbols[u];
-                        if (!ue->defined) {
+                        SymbolEntry* ue = curScope.lookup(u);
+                        if (!ue || !ue->defined) {
                             addWarning("use_before_def_" + u + "@" + std::to_string(nodeIndex),
                                 "variable '" + u + "' used before assignment at Stmt#" +
                                 std::to_string(nodeIndex));
+                        } else {
+                            ue->used = true;
+                            ue->usedLine = nodeIndex;
+                            ue->name = u;
                         }
-                        ue->used = true;
-                        ue->usedLine = nodeIndex;
-                        ue->name = u;
                     }
 
                     std::vector<std::string> diag;
-                    EvalResult cond = evalExpr(node->children[2],
-                                               result.globalScope.symbols, diag);
+                    EvalResult cond = evalExprInternal(node->children[2], curScope, diag);
                     for (auto& d : diag)
                         result.errors.push_back("Stmt#" + std::to_string(nodeIndex) + ": " + d);
                     if (cond.type != VarType::TY_ERROR && cond.type != VarType::TY_BOOL) {
@@ -718,20 +750,20 @@ bool analyzeSemantics(ASTNode* root, SemanticResult& result) {
                     std::set<std::string> used;
                     collectUsedVars(node->children[2], used);
                     for (auto& u : used) {
-                        auto* ue = &result.globalScope.symbols[u];
-                        if (!ue->defined) {
+                        SymbolEntry* ue = curScope.lookup(u);
+                        if (!ue || !ue->defined) {
                             addWarning("use_before_def_" + u + "@" + std::to_string(nodeIndex),
                                 "variable '" + u + "' used before assignment at Stmt#" +
                                 std::to_string(nodeIndex));
+                        } else {
+                            ue->used = true;
+                            ue->usedLine = nodeIndex;
+                            ue->name = u;
                         }
-                        ue->used = true;
-                        ue->usedLine = nodeIndex;
-                        ue->name = u;
                     }
 
                     std::vector<std::string> diag;
-                    EvalResult cond = evalExpr(node->children[2],
-                                               result.globalScope.symbols, diag);
+                    EvalResult cond = evalExprInternal(node->children[2], curScope, diag);
                     for (auto& d : diag)
                         result.errors.push_back("Stmt#" + std::to_string(nodeIndex) + ": " + d);
                     if (cond.type != VarType::TY_ERROR && cond.type != VarType::TY_BOOL) {
@@ -741,25 +773,74 @@ bool analyzeSemantics(ASTNode* root, SemanticResult& result) {
                     }
                 }
             }
+            else if (first == "INT_KW") {
+                if (node->children.size() >= 3 && node->children[2]->sym == "DeclRest") {
+                    std::string var = node->children[1]->lexeme;
+                    ASTNode* declRest = node->children[2];
+
+                    SymbolEntry* entry = &curScope.symbols[var];
+
+                    if (declRest->children.empty()) {
+                        int initVal = 0;
+                        entry->name = var;
+                        entry->defined = true;
+                        entry->definedLine = nodeIndex;
+                        entry->type = VarType::TY_INT;
+                        entry->value = initVal;
+                        result.infos.push_back(
+                            "defined variable '" + var + "' (type=int, value=" + std::to_string(initVal) + ") at Stmt#" +
+                            std::to_string(nodeIndex));
+                    } else if (declRest->children[0]->sym == "ASSIGN") {
+                        std::vector<std::string> diag;
+                        EvalResult rhs = evalExprInternal(declRest->children[1], curScope, diag);
+                        for (auto& d : diag)
+                            result.errors.push_back("Stmt#" + std::to_string(nodeIndex) + ": " + d);
+
+                        entry->name = var;
+                        entry->defined = true;
+                        entry->definedLine = nodeIndex;
+                        entry->type = (rhs.type != VarType::TY_ERROR) ? rhs.type : VarType::TY_INT;
+                        entry->value = rhs.intVal;
+                        result.infos.push_back(
+                            "defined variable '" + var + "' (type=" + std::string(typeName(entry->type)) +
+                            ", value=" + std::to_string(rhs.intVal) + ") at Stmt#" +
+                            std::to_string(nodeIndex));
+
+                        std::vector<std::string> used;
+                        collectUsedVars(declRest->children[1], used);
+                        for (auto& u : used) {
+                            SymbolEntry* ue = curScope.lookup(u);
+                            if (!ue || !ue->defined) {
+                                addWarning("use_before_def_" + u + "@" + std::to_string(nodeIndex),
+                                    "variable '" + u + "' used before assignment at Stmt#" +
+                                    std::to_string(nodeIndex));
+                            } else {
+                                ue->used = true;
+                                ue->usedLine = nodeIndex;
+                            }
+                        }
+                    }
+                }
+            }
             else if (first == "RETURN") {
                 if (node->children.size() >= 2 && node->children[1]->sym == "Expr") {
                     std::set<std::string> used;
                     collectUsedVars(node->children[1], used);
                     for (auto& u : used) {
-                        auto* ue = &result.globalScope.symbols[u];
-                        if (!ue->defined) {
+                        SymbolEntry* ue = curScope.lookup(u);
+                        if (!ue || !ue->defined) {
                             addWarning("use_before_def_" + u + "@" + std::to_string(nodeIndex),
                                 "variable '" + u + "' used before assignment at Stmt#" +
                                 std::to_string(nodeIndex));
+                        } else {
+                            ue->used = true;
+                            ue->usedLine = nodeIndex;
+                            ue->name = u;
                         }
-                        ue->used = true;
-                        ue->usedLine = nodeIndex;
-                        ue->name = u;
                     }
 
                     std::vector<std::string> diag;
-                    EvalResult retVal = evalExpr(node->children[1],
-                                                 result.globalScope.symbols, diag);
+                    EvalResult retVal = evalExprInternal(node->children[1], curScope, diag);
                     for (auto& d : diag)
                         result.errors.push_back("Stmt#" + std::to_string(nodeIndex) + ": " + d);
                     if (retVal.type != VarType::TY_ERROR) {
@@ -770,6 +851,13 @@ bool analyzeSemantics(ASTNode* root, SemanticResult& result) {
                     }
                 }
             }
+
+            for (auto* c : node->children) walk(c);
+
+            if (isBlock) {
+                scopeStack.pop_back();
+            }
+            return;
         }
 
         for (auto* c : node->children) walk(c);
@@ -777,12 +865,17 @@ bool analyzeSemantics(ASTNode* root, SemanticResult& result) {
 
     walk(root);
 
-    for (auto& kv : result.globalScope.symbols) {
-        if (kv.second.defined && !kv.second.used) {
-            result.warnings.push_back(
-                "variable '" + kv.first + "' assigned but never used");
+    result.globalScope = scopeStack.front();
+
+    std::function<void(Scope&)> checkUnused = [&](Scope& s) {
+        for (auto& kv : s.symbols) {
+            if (kv.second.defined && !kv.second.used) {
+                result.warnings.push_back(
+                    "variable '" + kv.first + "' assigned but never used");
+            }
         }
-    }
+    };
+    checkUnused(result.globalScope);
 
     return true;
 }

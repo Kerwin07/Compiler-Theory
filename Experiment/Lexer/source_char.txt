@@ -1,12 +1,47 @@
-x = 5;
-y = 10;
-z = 2 ^ 3;
-w = x + y * z;
-if (x == 5) {
-  r = x + y * 2;
-  r = r + 1;
+#include <stdio.h>
+
+int main() {
+  printf("This a test for Compiler");
+  int a = 10;
+  int b = 3;
+  int c = a + b * 2;
+  int d = c - 5;
+  int e = 2 ^ 4;
+  int f = -a;
+  int g = a * b;
+  int h = a / b;
+
+  printf("c=", c);
+  printf("d=", d);
+  printf("e=", e);
+  printf("f=", f);
+  printf("g=", g);
+  printf("h=", h);
+
+  if (a == 10) { 
+    printf(111); 
+  }
+  if (a != b) { 
+    printf(222); 
+  }
+  if (a > b) { 
+    printf(333); 
+  }
+  if (b < a) { 
+    printf(444); 
+  }
+  if (a >= 10) { printf(555); }
+  if (b <= 3) { printf(666); }
+
+  int i = 1;
+  while (i < 3) { printf(i); i = i + 1; }
+
+  int xxx;
+  printf("xxx=", xxx);
+  xxx = scanf();
+  printf("xxx=", xxx);
+  int yyy = xxx / 0;
+
+  return 0;
 }
-while (x == 5) {
-  x = x + 1;
-}
-return w;
+

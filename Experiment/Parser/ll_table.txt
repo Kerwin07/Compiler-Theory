@@ -1,163 +1,221 @@
 START S
-NONTERMINALS Comp Comp' ElseOpt Expr Expr' Factor Power PowerRest S Stmt StmtList StmtTail Term Term'
-TERMINALS ASSIGN DIV ELSE EQ GE GT ID IF INT LBRACE LE LPAREN LT MINUS MUL NE PLUS POW RBRACE RETURN RPAREN SEMI WHILE $
-PRODUCTIONS 36
-0: S -> StmtList
-1: StmtList -> Stmt StmtList
-2: StmtList -> eps
-3: Stmt -> ID StmtTail SEMI
-4: Stmt -> IF LPAREN Expr RPAREN Stmt ElseOpt
-5: Stmt -> WHILE LPAREN Expr RPAREN Stmt
-6: Stmt -> LBRACE StmtList RBRACE
-7: Stmt -> RETURN Expr SEMI
-8: Stmt -> SEMI
-9: ElseOpt -> ELSE Stmt
-10: ElseOpt -> eps
-11: StmtTail -> ASSIGN Expr
-12: StmtTail -> Term' Comp' Expr'
-13: Expr -> Comp Expr'
-14: Expr' -> EQ Comp Expr'
-15: Expr' -> NE Comp Expr'
-16: Expr' -> LT Comp Expr'
-17: Expr' -> GT Comp Expr'
-18: Expr' -> LE Comp Expr'
-19: Expr' -> GE Comp Expr'
-20: Expr' -> eps
-21: Comp -> Term Comp'
-22: Comp' -> PLUS Term Comp'
-23: Comp' -> MINUS Term Comp'
-24: Comp' -> eps
-25: Term -> Power Term'
-26: Term' -> MUL Power Term'
-27: Term' -> DIV Power Term'
-28: Term' -> eps
-29: Power -> Factor PowerRest
-30: PowerRest -> POW Power
-31: PowerRest -> eps
-32: Factor -> LPAREN Expr RPAREN
-33: Factor -> ID
-34: Factor -> INT
-35: Factor -> MINUS Factor
+NONTERMINALS ArgTail Args Block Comp Comp' DeclRest ElseOpt Expr Expr' Factor FactorRest Power PowerRest S Stmt StmtList StmtTail Term Term'
+TERMINALS ASSIGN COMMA DIV ELSE EQ GE GT ID IF INT INT_KW LBRACE LE LPAREN LT MINUS MUL NE PLUS POW RBRACE RETURN RPAREN SEMI STRING WHILE $
+PRODUCTIONS 49
+0: S -> INT_KW ID LPAREN RPAREN Block
+1: S -> StmtList
+2: Block -> LBRACE StmtList RBRACE
+3: StmtList -> Stmt StmtList
+4: StmtList -> eps
+5: Stmt -> INT_KW ID DeclRest SEMI
+6: Stmt -> ID StmtTail SEMI
+7: Stmt -> IF LPAREN Expr RPAREN Stmt ElseOpt
+8: Stmt -> WHILE LPAREN Expr RPAREN Stmt
+9: Stmt -> LBRACE StmtList RBRACE
+10: Stmt -> RETURN Expr SEMI
+11: Stmt -> SEMI
+12: DeclRest -> ASSIGN Expr
+13: DeclRest -> eps
+14: ElseOpt -> ELSE Stmt
+15: ElseOpt -> eps
+16: StmtTail -> ASSIGN Expr
+17: StmtTail -> LPAREN Args RPAREN
+18: StmtTail -> Term' Comp' Expr'
+19: Expr -> Comp Expr'
+20: Expr' -> EQ Comp Expr'
+21: Expr' -> NE Comp Expr'
+22: Expr' -> LT Comp Expr'
+23: Expr' -> GT Comp Expr'
+24: Expr' -> LE Comp Expr'
+25: Expr' -> GE Comp Expr'
+26: Expr' -> eps
+27: Comp -> Term Comp'
+28: Comp' -> PLUS Term Comp'
+29: Comp' -> MINUS Term Comp'
+30: Comp' -> eps
+31: Term -> Power Term'
+32: Term' -> MUL Power Term'
+33: Term' -> DIV Power Term'
+34: Term' -> eps
+35: Power -> Factor PowerRest
+36: PowerRest -> POW Power
+37: PowerRest -> eps
+38: Factor -> LPAREN Expr RPAREN
+39: Factor -> ID FactorRest
+40: Factor -> INT
+41: Factor -> STRING
+42: Factor -> MINUS Factor
+43: FactorRest -> LPAREN Args RPAREN
+44: FactorRest -> eps
+45: Args -> Expr ArgTail
+46: Args -> eps
+47: ArgTail -> COMMA Expr ArgTail
+48: ArgTail -> eps
 FIRST
-S: ID IF LBRACE RETURN SEMI WHILE eps
+S: ID IF INT_KW LBRACE RETURN SEMI WHILE eps
 FOLLOW
-Comp: EQ GE GT LE LT NE RPAREN SEMI
-Comp': EQ GE GT LE LT NE RPAREN SEMI
-ElseOpt: $ ELSE ID IF LBRACE RBRACE RETURN SEMI WHILE
-Expr: RPAREN SEMI
-Expr': RPAREN SEMI
-Factor: DIV EQ GE GT LE LT MINUS MUL NE PLUS POW RPAREN SEMI
-Power: DIV EQ GE GT LE LT MINUS MUL NE PLUS RPAREN SEMI
-PowerRest: DIV EQ GE GT LE LT MINUS MUL NE PLUS RPAREN SEMI
+ArgTail: RPAREN
+Args: RPAREN
+Block: $
+Comp: COMMA EQ GE GT LE LT NE RPAREN SEMI
+Comp': COMMA EQ GE GT LE LT NE RPAREN SEMI
+DeclRest: SEMI
+ElseOpt: $ ELSE ID IF INT_KW LBRACE RBRACE RETURN SEMI WHILE
+Expr: COMMA RPAREN SEMI
+Expr': COMMA RPAREN SEMI
+Factor: COMMA DIV EQ GE GT LE LT MINUS MUL NE PLUS POW RPAREN SEMI
+FactorRest: COMMA DIV EQ GE GT LE LT MINUS MUL NE PLUS POW RPAREN SEMI
+Power: COMMA DIV EQ GE GT LE LT MINUS MUL NE PLUS RPAREN SEMI
+PowerRest: COMMA DIV EQ GE GT LE LT MINUS MUL NE PLUS RPAREN SEMI
 S: $
-Stmt: $ ELSE ID IF LBRACE RBRACE RETURN SEMI WHILE
+Stmt: $ ELSE ID IF INT_KW LBRACE RBRACE RETURN SEMI WHILE
 StmtList: $ RBRACE
 StmtTail: SEMI
-Term: EQ GE GT LE LT MINUS NE PLUS RPAREN SEMI
-Term': EQ GE GT LE LT MINUS NE PLUS RPAREN SEMI
+Term: COMMA EQ GE GT LE LT MINUS NE PLUS RPAREN SEMI
+Term': COMMA EQ GE GT LE LT MINUS NE PLUS RPAREN SEMI
 TABLE
-Comp ID 21
-Comp INT 21
-Comp LPAREN 21
-Comp MINUS 21
-Comp' EQ 24
-Comp' GE 24
-Comp' GT 24
-Comp' LE 24
-Comp' LT 24
-Comp' MINUS 23
-Comp' NE 24
-Comp' PLUS 22
-Comp' RPAREN 24
-Comp' SEMI 24
-ElseOpt $ 10
-ElseOpt ELSE 9
-ElseOpt ID 10
-ElseOpt IF 10
-ElseOpt LBRACE 10
-ElseOpt RBRACE 10
-ElseOpt RETURN 10
-ElseOpt SEMI 10
-ElseOpt WHILE 10
-Expr ID 13
-Expr INT 13
-Expr LPAREN 13
-Expr MINUS 13
-Expr' EQ 14
-Expr' GE 19
-Expr' GT 17
-Expr' LE 18
-Expr' LT 16
-Expr' NE 15
-Expr' RPAREN 20
-Expr' SEMI 20
-Factor ID 33
-Factor INT 34
-Factor LPAREN 32
-Factor MINUS 35
-Power ID 29
-Power INT 29
-Power LPAREN 29
-Power MINUS 29
-PowerRest DIV 31
-PowerRest EQ 31
-PowerRest GE 31
-PowerRest GT 31
-PowerRest LE 31
-PowerRest LT 31
-PowerRest MINUS 31
-PowerRest MUL 31
-PowerRest NE 31
-PowerRest PLUS 31
-PowerRest POW 30
-PowerRest RPAREN 31
-PowerRest SEMI 31
-S $ 0
-S ID 0
-S IF 0
-S LBRACE 0
-S RETURN 0
-S SEMI 0
-S WHILE 0
-Stmt ID 3
-Stmt IF 4
-Stmt LBRACE 6
-Stmt RETURN 7
-Stmt SEMI 8
-Stmt WHILE 5
-StmtList $ 2
-StmtList ID 1
-StmtList IF 1
-StmtList LBRACE 1
-StmtList RBRACE 2
-StmtList RETURN 1
-StmtList SEMI 1
-StmtList WHILE 1
-StmtTail ASSIGN 11
-StmtTail DIV 12
-StmtTail EQ 12
-StmtTail GE 12
-StmtTail GT 12
-StmtTail LE 12
-StmtTail LT 12
-StmtTail MINUS 12
-StmtTail MUL 12
-StmtTail NE 12
-StmtTail PLUS 12
-StmtTail SEMI 12
-Term ID 25
-Term INT 25
-Term LPAREN 25
-Term MINUS 25
-Term' DIV 27
-Term' EQ 28
-Term' GE 28
-Term' GT 28
-Term' LE 28
-Term' LT 28
-Term' MINUS 28
-Term' MUL 26
-Term' NE 28
-Term' PLUS 28
-Term' RPAREN 28
-Term' SEMI 28
+ArgTail COMMA 47
+ArgTail RPAREN 48
+Args ID 45
+Args INT 45
+Args LPAREN 45
+Args MINUS 45
+Args RPAREN 46
+Args STRING 45
+Block LBRACE 2
+Comp ID 27
+Comp INT 27
+Comp LPAREN 27
+Comp MINUS 27
+Comp STRING 27
+Comp' COMMA 30
+Comp' EQ 30
+Comp' GE 30
+Comp' GT 30
+Comp' LE 30
+Comp' LT 30
+Comp' MINUS 29
+Comp' NE 30
+Comp' PLUS 28
+Comp' RPAREN 30
+Comp' SEMI 30
+DeclRest ASSIGN 12
+DeclRest SEMI 13
+ElseOpt $ 15
+ElseOpt ELSE 14
+ElseOpt ID 15
+ElseOpt IF 15
+ElseOpt INT_KW 15
+ElseOpt LBRACE 15
+ElseOpt RBRACE 15
+ElseOpt RETURN 15
+ElseOpt SEMI 15
+ElseOpt WHILE 15
+Expr ID 19
+Expr INT 19
+Expr LPAREN 19
+Expr MINUS 19
+Expr STRING 19
+Expr' COMMA 26
+Expr' EQ 20
+Expr' GE 25
+Expr' GT 23
+Expr' LE 24
+Expr' LT 22
+Expr' NE 21
+Expr' RPAREN 26
+Expr' SEMI 26
+Factor ID 39
+Factor INT 40
+Factor LPAREN 38
+Factor MINUS 42
+Factor STRING 41
+FactorRest COMMA 44
+FactorRest DIV 44
+FactorRest EQ 44
+FactorRest GE 44
+FactorRest GT 44
+FactorRest LE 44
+FactorRest LPAREN 43
+FactorRest LT 44
+FactorRest MINUS 44
+FactorRest MUL 44
+FactorRest NE 44
+FactorRest PLUS 44
+FactorRest POW 44
+FactorRest RPAREN 44
+FactorRest SEMI 44
+Power ID 35
+Power INT 35
+Power LPAREN 35
+Power MINUS 35
+Power STRING 35
+PowerRest COMMA 37
+PowerRest DIV 37
+PowerRest EQ 37
+PowerRest GE 37
+PowerRest GT 37
+PowerRest LE 37
+PowerRest LT 37
+PowerRest MINUS 37
+PowerRest MUL 37
+PowerRest NE 37
+PowerRest PLUS 37
+PowerRest POW 36
+PowerRest RPAREN 37
+PowerRest SEMI 37
+S $ 1
+S ID 1
+S IF 1
+S INT_KW 0
+S LBRACE 1
+S RETURN 1
+S SEMI 1
+S WHILE 1
+Stmt ID 6
+Stmt IF 7
+Stmt INT_KW 5
+Stmt LBRACE 9
+Stmt RETURN 10
+Stmt SEMI 11
+Stmt WHILE 8
+StmtList $ 4
+StmtList ID 3
+StmtList IF 3
+StmtList INT_KW 3
+StmtList LBRACE 3
+StmtList RBRACE 4
+StmtList RETURN 3
+StmtList SEMI 3
+StmtList WHILE 3
+StmtTail ASSIGN 16
+StmtTail DIV 18
+StmtTail EQ 18
+StmtTail GE 18
+StmtTail GT 18
+StmtTail LE 18
+StmtTail LPAREN 17
+StmtTail LT 18
+StmtTail MINUS 18
+StmtTail MUL 18
+StmtTail NE 18
+StmtTail PLUS 18
+StmtTail SEMI 18
+Term ID 31
+Term INT 31
+Term LPAREN 31
+Term MINUS 31
+Term STRING 31
+Term' COMMA 34
+Term' DIV 33
+Term' EQ 34
+Term' GE 34
+Term' GT 34
+Term' LE 34
+Term' LT 34
+Term' MINUS 34
+Term' MUL 32
+Term' NE 34
+Term' PLUS 34
+Term' RPAREN 34
+Term' SEMI 34
